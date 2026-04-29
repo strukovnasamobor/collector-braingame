@@ -23,7 +23,6 @@ import AppHeader from '../components/AppHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useGameExit } from '../contexts/GameExitContext';
-import { getEmailLocalPart } from '../utils/emailDisplay';
 import { createCasualRoom } from '../services/firebaseActions';
 
 function generateGameCode() {
@@ -95,14 +94,14 @@ export default function LobbyScreen() {
     setShowEmail(!showEmail);
   };
 
-  const userLabel = showEmail ? getEmailLocalPart(user.email) : (user.displayName || user.email);
+  const userLabel = showEmail ? user.email : (user.displayName || user.email);
 
   return (
     <IonPage>
       <AppHeader />
       <IonContent fullscreen>
         <div className="sk-menu-content">
-          <div className="sk-user-bar" title={getEmailLocalPart(user.email)} onClick={handleUserBarClick}>
+          <div className="sk-user-bar" title={user.email} onClick={handleUserBarClick}>
             {userLabel}
           </div>
 
