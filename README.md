@@ -1,6 +1,6 @@
 # Collector BrainGame
 
-Web App:<br>https://colector-braingame.web.app<br><br>
+Web App:<br>https://collector-braingame.web.app<br><br>
 
 <a href="https://play.google.com/store/apps/details?id=hr.strukovnasamobor.collector-braingame" target="_blank">
   <img src="public/icons/google_play_badge.png" height="40" alt="Get It On Google Play"/>

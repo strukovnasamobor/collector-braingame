@@ -3,7 +3,7 @@ main = "src/index.js"
 compatibility_date = "2026-04-28"
 
 [vars]
-FIREBASE_PROJECT_ID = "niop4g-sakupljac-78896"
+FIREBASE_PROJECT_ID = "collector-braingame"
 
 [triggers]
 crons = ["* * * * *"]

@@ -34,3 +34,10 @@ android/app/release/*
 
 # Local settings
 .claude
+
+# Cloudflare Worker secrets
+worker/.dev.vars
+worker/node_modules
+
+# Production env (Vite reads at build time)
+.env.production
