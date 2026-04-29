@@ -9,9 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png', 'i18n/en.json', 'i18n/hr.json'],
       manifest: {
-        name: 'Collector',
-        short_name: 'Collector',
-        description: 'Collector — grid strategy game with online multiplayer',
+        name: 'Collector BrainGame',
+        short_name: 'Collector BrainGame',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',

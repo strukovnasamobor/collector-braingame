@@ -17,7 +17,7 @@ export function I18nProvider({ children }) {
         if (cancelled) return;
         setTranslations(data);
         setReady(true);
-        document.title = data.app_title || 'Collector';
+        document.title = data.app_title || 'Collector BrainGame';
       })
       .catch((e) => console.error('Failed to load translations', e));
     return () => {
