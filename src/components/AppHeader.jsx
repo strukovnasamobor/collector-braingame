@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   IonHeader,
   IonToolbar,
@@ -20,7 +21,15 @@ import RulesModal from './RulesModal';
 export default function AppHeader({ title }) {
   const { t, lang, toggleLang } = useI18n();
   const { isDark, toggleTheme } = useTheme();
+  const location = useLocation();
   const [rulesOpen, setRulesOpen] = useState(false);
+
+  let derivedTitle = t('app_title');
+  if (location.pathname.startsWith('/online')) {
+    derivedTitle = t('tabs.online');
+  } else if (location.pathname.startsWith('/offline')) {
+    derivedTitle = t('tabs.offline');
+  }
 
   // Close rules modal when auth state changes (prevents leftover overlays after redirect signin)
   useEffect(() => {
@@ -34,7 +43,7 @@ export default function AppHeader({ title }) {
       <IonHeader>
         <IonToolbar>
           <IonTitle>
-            <span className="sk-header-title">{title || t('app_title')}</span>
+            <span className="sk-header-title">{title || derivedTitle}</span>
           </IonTitle>
           <IonButtons slot="end">
             <IonButton

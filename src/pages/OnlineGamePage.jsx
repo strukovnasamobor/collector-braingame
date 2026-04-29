@@ -136,7 +136,7 @@ export default function OnlineGamePage() {
   if (!data) {
     return (
       <IonPage>
-        <AppHeader title={t('app_title')} />
+        <AppHeader />
         <IonContent fullscreen>
           <div className="sk-menu-content">
             <IonSpinner />
@@ -158,7 +158,7 @@ export default function OnlineGamePage() {
 
   return (
     <IonPage>
-      <AppHeader title={t('app_title')} />
+      <AppHeader />
       <IonContent fullscreen scrollY={false} className="sk-game-content">
         <div className="sk-tab-section sk-game-stage ion-padding-horizontal">
           <div className="sk-game-header">

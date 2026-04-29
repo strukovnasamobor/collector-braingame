@@ -87,7 +87,7 @@ export default function LobbyScreen() {
 
   return (
     <IonPage>
-      <AppHeader title={t('app_title')} />
+      <AppHeader />
       <IonContent fullscreen>
         <div className="sk-menu-content">
           <div className="sk-user-bar" title={getEmailLocalPart(user.email)} onClick={handleUserBarClick}>

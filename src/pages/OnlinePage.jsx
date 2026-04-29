@@ -14,7 +14,7 @@ export default function OnlinePage() {
 
   return (
     <IonPage>
-      <AppHeader title={t('app_title')} />
+      <AppHeader />
       <IonContent fullscreen>
         <div className="sk-menu-content">
           <IonSpinner />

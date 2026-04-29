@@ -1,4 +1,4 @@
-- firestore and firestore rules
+- firestore
 - Google Authentification
 - worker
 - AppCheck
