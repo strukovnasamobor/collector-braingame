@@ -1,5 +1,3 @@
-- firestore
-- test worker on CloudFlare
 - AppCheck
 
 ? check matchmaking and multiple device same user login, changing name of Google Account
