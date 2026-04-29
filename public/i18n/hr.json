@@ -1,0 +1,153 @@
+{
+  "app_title": "Sakupljač",
+  "tabs": {
+    "offline": "Offline",
+    "online": "Online",
+    "leaderboard": "Ljestvica"
+  },
+  "header": {
+    "dropdown": "Izbornik",
+    "sign_out": "Odjava"
+  },
+  "menu": {
+    "new_game": "Nova Igra",
+    "online_game": "Online Igra",
+    "leaderboard": "Ljestvica",
+    "reset_game": "Resetiraj Igru",
+    "main_menu": "Glavni Izbornik",
+    "theme_light": "Svijetli mod",
+    "theme_dark": "Tamni mod",
+    "language_en": "English",
+    "language_hr": "Hrvatski"
+  },
+  "auth": {
+    "title": "Prijava",
+    "message": "Prijavite se za online igru.",
+    "sign_in_google": "Prijavi se s Google računom",
+    "cancel": "Odustani",
+    "opening_browser": "Otvaranje preglednika za prijavu...",
+    "success": "Prijava uspješna!"
+  },
+  "lobby": {
+    "sign_out": "Odjava",
+    "create_casual": "Casual Igra",
+    "create_ranked": "Ranked Igra",
+    "join_game": "Pridruži se",
+    "online_leaderboard": "Ljestvica",
+    "back": "Natrag",
+    "game_options": "Postavke Igre",
+    "casual_mode": "Casual Igra - Opcije",
+    "ranked_mode": "Ranked Igra - 8×8 Ploča, 30s Potez",
+    "grid_size": "Veličina ploče",
+    "timer_label": "Igra s mjeračem vremena (30s po potezu)",
+    "create_button": "Stvori sobu",
+    "cancel_button": "Odustani",
+    "waiting_room": "Čekanje protivnika... Kod sobe:",
+    "join_room": "Pridruži se sobi",
+    "room_code": "Kod sobe",
+    "room_code_input_placeholder": "Unesite kod",
+    "join_button": "Pridruži se",
+    "find_match": "Pronađi meč",
+    "ranked_matchmaking_only": "Ranked koristi samo matchmaking. Kod sobe nije dostupan u ranked modu.",
+    "matchmaking_title": "Matchmaking",
+    "matchmaking_searching": "Traženje protivnika...",
+    "matchmaking_ranked": "Ranked red čekanja",
+    "matchmaking_casual": "Casual red čekanja",
+    "matchmaking_error": "Neuspjelo pokretanje matchmakinga. Pokušajte ponovno."
+  },
+  "game": {
+    "new_game_dialog": "Nova Igra",
+    "player1_name": "Ime 1. igrača",
+    "player1_placeholder": "Igrač 1",
+    "player2_name": "Ime 2. igrača",
+    "player2_placeholder": "Igrač 2",
+    "grid_size_label": "Veličina ploče",
+    "timer_label": "Igra s mjeračem vremena (30s po potezu)",
+    "start_button": "Započni Igru",
+    "cancel_button": "Odustani",
+    "game_over_title": "Kraj Igre!",
+    "game_over_draw": "Neriješeno!",
+    "game_over_winner": "Pobjednik: {player}!",
+    "new_game_button": "Nova Igra",
+    "main_menu_button": "Glavni Izbornik",
+    "reset_game": "Resetiraj Igru",
+    "confirm_reset_title": "Resetiraj Igru",
+    "confirm_reset_message": "Jeste li sigurni da želite resetirati igru?",
+    "yes_button": "Da",
+    "no_button": "Ne",
+    "reset_button": "Resetiraj",
+    "back_to_menu_button": "Izbornik",
+    "phase_place": "{player} - Postavi točku",
+    "phase_eliminate": "{player} - Osjenčaj polje",
+    "invalid_placement": "Nevaljano postavljanje! Morate postaviti pokraj postojeće pločice ili na prazno polje.",
+    "must_eliminate_adjacent": "Morate osjenčati susjednu ćeliju!",
+    "enter_both_names": "Molimo unesite oba imena igrača!",
+    "timeout_loss": "{player} je izgubio zbog neaktivnosti (3 propuštena poteza)!",
+    "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2})."
+  },
+  "leaderboard": {
+    "title": "Ljestvica",
+    "close_button": "Zatvori",
+    "rank": "#",
+    "player": "Igrač",
+    "rating": "Rejting",
+    "wdl": "P / N / G",
+    "empty_local": "Nema spremljenih igrača.",
+    "empty_online": "Još nema online igrača.",
+    "local_section": "Lokalno",
+    "online_section": "Online",
+    "loading": "Učitavanje..."
+  },
+  "rules": {
+    "title": "Pravila",
+    "description": "Svaki potez ima dva koraka: postavite točku, pa osjenčajte jedno susjedno polje.",
+    "items": [
+      {
+        "title": "1. Postavite točku",
+        "text": "Prva točka može ići bilo gdje. Kasnije točke ne moraju biti odmah uz drugu točku, ali ako ih postavite dalje od svoje grupe, neće se povezati s njom. Točke se mogu povezivati horizontalno, vertikalno i dijagonalno."
+      },
+      {
+        "title": "2. Osjenčajte polje",
+        "text": "Nakon postavljanja točke morate osjenčati jedno polje koje je susjedno toj točki. Osjenčano polje ostaje blokirano do kraja igre."
+      },
+      {
+        "title": "3. Rezultat",
+        "text": "Rezultat je veličina vaše najveće povezane grupe točaka."
+      },
+      {
+        "title": "4. Casual mod",
+        "text": "Casual igre dopuštaju izbor veličine ploče i mjerača vremena. Također možete ručno stvarati ili se pridružiti sobama."
+      },
+      {
+        "title": "5. Ranked mod",
+        "text": "Ranked igre uvijek koriste ploču 8×8, 30 sekundi po potezu i samo matchmaking. Ako protivnik napusti igru, vraćate se u izbornik i vaš rejting se ne mijenja."
+      }
+    ],
+    "close_button": "Zatvori"
+  },
+  "menu_bar": {
+    "file": "Datoteka",
+    "new_game": "Nova Igra",
+    "quit": "Izađi",
+    "game": "Igra",
+    "reset_game": "Resetiraj Igru",
+    "main_menu": "Glavni Izbornik",
+    "help": "Pomoć",
+    "rules": "Pravila"
+  },
+  "notifications": {
+    "online_error": "Greška pri spajanju na online igru",
+    "timeout": "Veza je istekla. Pokušajte ponovo.",
+    "opponent_left": "Protivnik je napustio igru",
+    "opponent_left_no_rating_change": "Protivnik je napustio ranked meč. Vraćeni ste u izbornik i vaš rejting se nije promijenio.",
+    "invalid_move": "Nevaljano postavljanje",
+    "waiting_for_opponent": "Čekanje protivnika...",
+    "your_turn": "Tvoj potez",
+    "opponent_turn": "Potez protivnika",
+    "time_remaining": "Preostalo vrijeme: {seconds}s",
+    "player_timeout": "Isteklo vrijeme igrača",
+    "ok_button": "U redu",
+    "room_not_found": "Soba nije pronađena ili je igra već počela.",
+    "enter_code": "Unesite kod sobe!"
+  }
+}

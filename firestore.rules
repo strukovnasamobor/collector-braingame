@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlayerInGame(data) {
+      return isSignedIn() && (
+        data.player1uid == request.auth.uid || data.player2uid == request.auth.uid
+      );
+    }
+
+    function gameCoreFieldsUnchanged() {
+      return request.resource.data.mode == resource.data.mode
+        && request.resource.data.source == resource.data.source
+        && request.resource.data.player1uid == resource.data.player1uid
+        && request.resource.data.player2uid == resource.data.player2uid
+        && request.resource.data.player1name == resource.data.player1name
+        && request.resource.data.player2name == resource.data.player2name
+        && request.resource.data.gridSize == resource.data.gridSize
+        && request.resource.data.timerEnabled == resource.data.timerEnabled
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    match /players/{userId} {
+      // Allow public reads for the leaderboard (no auth required).
+      allow read: if true;
+      // Player docs are now written by Firebase Functions only.
+      allow create, update, delete: if false;
+    }
+
+    match /games/{gameId} {
+      allow read: if isPlayerInGame(resource.data)
+        || (
+          isSignedIn()
+          && resource.data.mode == 'casual'
+          && resource.data.source == 'room'
+          && resource.data.status == 'waiting'
+        );
+
+      // All game mutations are handled by Firebase Functions.
+      allow create, update, delete: if false;
+    }
+
+    match /matchmakingQueue_ranked/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+
+    match /matchmakingQueue_casual/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+  }
+}
