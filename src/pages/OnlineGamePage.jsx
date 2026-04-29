@@ -1,25 +1,23 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import {
   IonPage,
   IonContent,
-  IonButton,
-  IonIcon,
   IonAlert,
   IonSpinner
 } from '@ionic/react';
-import { homeOutline } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useOnlineGame } from '../hooks/useOnlineGame';
 import { useGameTimer } from '../hooks/useGameTimer';
+import { useGameExit } from '../contexts/GameExitContext';
 import { formatDelta } from '../game/gameEngine';
 import { notifyGameJoin } from '../services/firebaseActions';
 
 export default function OnlineGamePage() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { id } = useParams();
   const { user } = useAuth();
   const history = useHistory();
@@ -35,13 +33,15 @@ export default function OnlineGamePage() {
     onTimeout,
     leaveGame,
     turnKey,
+    phase,
+    currentPlayer,
     localError,
     finalResult
   } = useOnlineGame(id);
 
-  const [leaveOpen, setLeaveOpen] = useState(false);
   const [alertError, setAlertError] = useState('');
   const [opponentLeftOpen, setOpponentLeftOpen] = useState(false);
+  const { registerExit, clearExit } = useGameExit();
 
   useEffect(() => {
     if (exists === false) history.replace('/online/lobby');
@@ -87,7 +87,7 @@ export default function OnlineGamePage() {
   }, [localError, t]);
 
   const isMyTurn =
-    data?.status === 'active' && data.currentPlayer === myPlayerNumber;
+    data?.status === 'active' && currentPlayer === myPlayerNumber;
 
   const seconds = useGameTimer({
     enabled: !!data && data.status === 'active' && !!data.timerEnabled,
@@ -95,10 +95,18 @@ export default function OnlineGamePage() {
     onTimeout
   });
 
-  const handleMainMenu = async () => {
+  const handleQuit = useCallback(async () => {
     await leaveGame();
     history.replace('/online/lobby');
-  };
+  }, [leaveGame, history]);
+
+  useEffect(() => {
+    registerExit({
+      tabRoot: '/online',
+      onConfirm: handleQuit
+    });
+    return () => clearExit('/online');
+  }, [registerExit, clearExit, handleQuit]);
 
   const message = useMemo(() => {
     if (!finalResult || !data) return '';
@@ -147,14 +155,13 @@ export default function OnlineGamePage() {
   }
 
   const currentName =
-    data.currentPlayer === 1 ? data.player1name : data.player2name;
+    currentPlayer === 1 ? data.player1name : data.player2name;
   const statusText =
-    data.phase === 'place'
+    phase === 'place'
       ? t('game.phase_place', { player: currentName })
       : t('game.phase_eliminate', { player: currentName });
-  const statusColor = data.currentPlayer === 1 ? '#dc3545' : '#007bff';
+  const statusColor = currentPlayer === 1 ? '#dc3545' : '#007bff';
   const isRanked = data.mode === 'ranked';
-  const menuButtonLabel = lang === 'hr' ? 'Izbornik' : t('game.back_to_menu_button');
 
   return (
     <IonPage>
@@ -162,17 +169,14 @@ export default function OnlineGamePage() {
       <IonContent fullscreen scrollY={false} className="sk-game-content">
         <div className="sk-tab-section sk-game-stage ion-padding-horizontal">
           <div className="sk-game-header">
-            <div className={`sk-player-info${data.currentPlayer === 1 ? ' active' : ''}`}>
+            <div className={`sk-player-info${currentPlayer === 1 ? ' active' : ''}`}>
               <div className="sk-player-name" style={{ color: '#dc3545' }}>
                 {data.player1name}
                 {isRanked ? ` (${Math.round(ratings[1])})` : ''}
               </div>
               <div className="sk-player-score">{scores[1]}</div>
             </div>
-            <div className="sk-status sk-status-desktop" style={{ color: statusColor }}>
-              {data.status === 'active' ? statusText : ''}
-            </div>
-            <div className={`sk-player-info${data.currentPlayer === 2 ? ' active' : ''}`}>
+            <div className={`sk-player-info${currentPlayer === 2 ? ' active' : ''}`}>
               <div className="sk-player-name" style={{ color: '#007bff' }}>
                 {data.player2name || '—'}
                 {isRanked ? ` (${Math.round(ratings[2])})` : ''}
@@ -180,12 +184,6 @@ export default function OnlineGamePage() {
               <div className="sk-player-score">{scores[2]}</div>
             </div>
           </div>
-
-          {data.timerEnabled && data.status === 'active' && (
-            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>
-              {seconds}
-            </div>
-          )}
 
           <GameBoard
             state={state}
@@ -195,32 +193,16 @@ export default function OnlineGamePage() {
             disabled={!isMyTurn || data.status !== 'active'}
           />
 
-          <div className="sk-game-controls">
-            <IonButton
-              className="sk-game-btn sk-game-btn-menu"
-              onClick={() => setLeaveOpen(true)}
-              fill="solid"
-            >
-              <IonIcon slot="start" icon={homeOutline} />
-              {menuButtonLabel}
-            </IonButton>
-          </div>
+          {data.timerEnabled && data.status === 'active' && (
+            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>
+              {seconds}
+            </div>
+          )}
 
-          <div className="sk-status sk-status-mobile" style={{ color: statusColor }}>
+          <div className="sk-status" style={{ color: statusColor }}>
             {data.status === 'active' ? statusText : ''}
           </div>
         </div>
-
-        <IonAlert
-          isOpen={leaveOpen}
-          onDidDismiss={() => setLeaveOpen(false)}
-          header={t('game.back_to_menu_button')}
-          message={t('game.confirm_reset_message')}
-          buttons={[
-            { text: t('game.no_button'), role: 'cancel' },
-            { text: t('game.yes_button'), handler: handleMainMenu }
-          ]}
-        />
 
         <IonAlert
           isOpen={!!alertError && !opponentLeftOpen}
@@ -259,8 +241,8 @@ export default function OnlineGamePage() {
           message={message}
           buttons={[
             {
-              text: t('game.main_menu_button'),
-              handler: handleMainMenu
+              text: t('notifications.ok_button'),
+              handler: handleQuit
             }
           ]}
         />

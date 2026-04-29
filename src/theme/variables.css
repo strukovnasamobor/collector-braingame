@@ -56,3 +56,19 @@ body.dark {
   --ion-tab-bar-background: #1e1e1e;
   --ion-item-background: transparent;
 }
+
+body.dark ion-select {
+  --color: #ffffff;
+  --placeholder-color: #ffffff;
+  color: #ffffff;
+}
+
+body.dark .alert-radio-label,
+body.dark .alert-checkbox-label,
+body.dark .alert-button,
+body.dark .alert-title,
+body.dark .alert-sub-title,
+body.dark .alert-message,
+body.dark .select-interface-option {
+  color: #ffffff !important;
+}

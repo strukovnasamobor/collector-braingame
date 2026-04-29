@@ -22,6 +22,7 @@ import {
 import AppHeader from '../components/AppHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
+import { useGameExit } from '../contexts/GameExitContext';
 import { getEmailLocalPart } from '../utils/emailDisplay';
 import { createCasualRoom } from '../services/firebaseActions';
 
@@ -46,6 +47,17 @@ export default function LobbyScreen() {
   useEffect(() => {
     if (!loading && !user) history.replace('/online/auth');
   }, [user, loading, history]);
+
+  const { registerExit, clearExit } = useGameExit();
+  useEffect(() => {
+    if (!mode) return undefined;
+    registerExit({
+      tabRoot: '/online',
+      silent: true,
+      onConfirm: () => setMode(null)
+    });
+    return () => clearExit('/online');
+  }, [mode, registerExit, clearExit]);
 
   if (!user) return null;
 

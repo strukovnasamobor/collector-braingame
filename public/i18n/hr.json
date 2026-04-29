@@ -53,7 +53,9 @@
     "matchmaking_searching": "Traženje protivnika...",
     "matchmaking_ranked": "Ranked red čekanja",
     "matchmaking_casual": "Casual red čekanja",
-    "matchmaking_error": "Neuspjelo pokretanje matchmakinga. Pokušajte ponovno."
+    "matchmaking_error": "Neuspjelo pokretanje matchmakinga. Pokušajte ponovno.",
+    "stop_search_title": "Prekini traženje?",
+    "stop_search_message": "Jeste li sigurni da želite prestati tražiti protivnika i izaći iz reda?"
   },
   "game": {
     "new_game_dialog": "Nova Igra",
@@ -73,6 +75,8 @@
     "reset_game": "Resetiraj Igru",
     "confirm_reset_title": "Resetiraj Igru",
     "confirm_reset_message": "Jeste li sigurni da želite resetirati igru?",
+    "quit_game_title": "Izađi iz igre?",
+    "quit_game_message": "Jeste li sigurni da želite napustiti trenutnu igru?",
     "yes_button": "Da",
     "no_button": "Ne",
     "reset_button": "Resetiraj",
@@ -148,6 +152,7 @@
     "player_timeout": "Isteklo vrijeme igrača",
     "ok_button": "U redu",
     "room_not_found": "Soba nije pronađena ili je igra već počela.",
-    "enter_code": "Unesite kod sobe!"
+    "enter_code": "Unesite kod sobe!",
+    "move_rejected": "Potez odbijen. Pokušajte ponovno."
   }
 }

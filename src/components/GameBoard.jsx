@@ -7,7 +7,7 @@ const P2_COLOR = '#007bff';
 const MIN_BOARD_MOBILE = 220;
 const MIN_BOARD_DESKTOP = 180;
 const MAX_BOARD_MOBILE = 430;
-const MAX_BOARD_DESKTOP = 400;
+const MAX_BOARD_DESKTOP = 760;
 const DESKTOP_BREAKPOINT = 900;
 
 export default function GameBoard({ state, size, history, onCellClick, disabled }) {
@@ -28,24 +28,20 @@ export default function GameBoard({ state, size, history, onCellClick, disabled 
         : Math.min(MAX_BOARD_MOBILE, Math.max(MIN_BOARD_MOBILE, mobileTarget));
       const minBoard = isDesktop ? MIN_BOARD_DESKTOP : MIN_BOARD_MOBILE;
 
-      let calculated;
-      if (isDesktop) {
-        // Keep desktop board stable: size from width only so the controls below remain visible.
-        calculated = Math.min(maxBoard, Math.max(minBoard, width));
-      } else {
-        const wrapperRect = wrapperRef.current.getBoundingClientRect();
-        const controlsHeight = stage?.querySelector('.sk-game-controls')?.getBoundingClientRect().height || 0;
-        const mobileStatusHeight = stage?.querySelector('.sk-status-mobile')?.getBoundingClientRect().height || 0;
-        const tabBarHeight = document.querySelector('ion-tab-bar')?.getBoundingClientRect().height || 0;
-        const layoutReserve = 14;
-        const bottomReserve = controlsHeight + mobileStatusHeight + tabBarHeight + layoutReserve;
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-        const availableHeight = Math.max(
-          minBoard,
-          Math.floor(viewportHeight - wrapperRect.top - bottomReserve)
-        );
-        calculated = Math.min(maxBoard, Math.max(minBoard, Math.min(width, availableHeight)));
-      }
+      const wrapperRect = wrapperRef.current.getBoundingClientRect();
+      const timerHeight = stage?.querySelector('.sk-turn-timer')?.getBoundingClientRect().height || 0;
+      const statusHeight = stage?.querySelector('.sk-status')?.getBoundingClientRect().height || 0;
+      const tabBarHeight = document.querySelector('ion-tab-bar')?.getBoundingClientRect().height || 0;
+      // Reserve enough headroom for status margin, board breathing room, and any
+      // sub-pixel rounding so the bottom pill never overlaps the tab bar.
+      const layoutReserve = 48;
+      const bottomReserve = timerHeight + statusHeight + tabBarHeight + layoutReserve;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const availableHeight = Math.max(
+        minBoard,
+        Math.floor(viewportHeight - wrapperRect.top - bottomReserve)
+      );
+      const calculated = Math.min(maxBoard, Math.max(minBoard, Math.min(width, availableHeight)));
       setPixelSize(calculated);
     };
     measureRef.current = measure;

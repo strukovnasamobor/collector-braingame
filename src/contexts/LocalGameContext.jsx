@@ -85,7 +85,7 @@ export function LocalGameProvider({ children }) {
         setLastPlaces({ row, col });
         setPhase('eliminate');
         setTimeouts((t) => ({ ...t, [currentPlayer]: 0 }));
-        setTurnKey((k) => k + 1);
+        // Do NOT bump turnKey here: the place + eliminate share one 30s timer.
       } else if (phase === 'eliminate') {
         if (!isValidElimination(state, lastPlaces, row, col)) return;
         const ns = applyEliminate(state, row, col);
@@ -106,26 +106,40 @@ export function LocalGameProvider({ children }) {
 
   const onTimeout = useCallback(() => {
     if (!config || result) return;
-    const isFullSkip = phase === 'place';
-    let nextTimeouts = timeouts;
-    if (isFullSkip) {
-      const newCount = (timeouts[currentPlayer] || 0) + 1;
-      nextTimeouts = { ...timeouts, [currentPlayer]: newCount };
-      if (newCount >= LOCAL_MAX_TIMEOUTS) {
-        const s1 = getBiggestGroup(state, config.gridSize, 1);
-        const s2 = getBiggestGroup(state, config.gridSize, 2);
-        const winner = currentPlayer === 1 ? 2 : 1;
-        finalize({ winner, score1: s1, score2: s2, timeout: true, loser: currentPlayer });
-        setTimeouts(nextTimeouts);
-        return;
-      }
+    const newCount = (timeouts[currentPlayer] || 0) + 1;
+    const nextTimeouts = { ...timeouts, [currentPlayer]: newCount };
+
+    // If the timer expired during the eliminate sub-phase, the player's
+    // just-placed dot is reverted (single per-turn budget; eliminate-timeout
+    // rolls back the whole turn).
+    let nextState = state;
+    let nextHistory = history;
+    if (phase === 'eliminate' && lastPlaces) {
+      nextState = state.map((row) => row.map((cell) => ({ ...cell })));
+      nextState[lastPlaces.row][lastPlaces.col].player = null;
+      const playerHist = history[currentPlayer] ? history[currentPlayer].slice(0, -1) : [];
+      nextHistory = { ...history, [currentPlayer]: playerHist };
     }
+
+    if (newCount >= LOCAL_MAX_TIMEOUTS) {
+      const s1 = getBiggestGroup(nextState, config.gridSize, 1);
+      const s2 = getBiggestGroup(nextState, config.gridSize, 2);
+      const winner = currentPlayer === 1 ? 2 : 1;
+      setState(nextState);
+      setHistory(nextHistory);
+      setTimeouts(nextTimeouts);
+      finalize({ winner, score1: s1, score2: s2, timeout: true, loser: currentPlayer });
+      return;
+    }
+
+    setState(nextState);
+    setHistory(nextHistory);
     setTimeouts(nextTimeouts);
     setCurrentPlayer((p) => (p === 1 ? 2 : 1));
     setPhase('place');
     setLastPlaces(null);
     setTurnKey((k) => k + 1);
-  }, [config, state, phase, currentPlayer, timeouts, result, finalize]);
+  }, [config, state, history, phase, currentPlayer, lastPlaces, timeouts, result, finalize]);
 
   const scores = useMemo(() => {
     if (!config || state.length === 0) return { 1: 0, 2: 0 };

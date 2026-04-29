@@ -8,6 +8,7 @@ import { I18nProvider } from './contexts/I18nContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { LocalGameProvider } from './contexts/LocalGameContext';
+import { GameExitProvider } from './contexts/GameExitContext';
 
 import TabBar from './components/TabBar';
 import BackgroundCanvas from './components/BackgroundCanvas';
@@ -43,32 +44,34 @@ export default function App() {
         <ThemeProvider>
           <AuthProvider>
             <LocalGameProvider>
-              <BackgroundCanvas />
-              <IonReactRouter>
-                <RouteFocusReset />
-                <IonTabs>
-                  <IonRouterOutlet>
-                    <Route exact path="/offline" component={OfflinePage} />
-                    <Route exact path="/offline/game" component={OfflineGamePage} />
-                    <Route exact path="/online" component={OnlinePage} />
-                    <Route exact path="/online/auth" component={AuthScreen} />
-                    <Route exact path="/online/lobby" component={LobbyScreen} />
-                    <Route exact path="/online/waiting/:code" component={WaitingRoom} />
-                    <Route exact path="/online/join" component={JoinRoomForm} />
-                    <Route
-                      exact
-                      path="/online/matchmaking/:mode"
-                      component={MatchmakingQueuePage}
-                    />
-                    <Route exact path="/online/game/:id" component={OnlineGamePage} />
-                    <Route exact path="/leaderboard" component={LeaderboardPage} />
-                    <Route exact path="/">
-                      <Redirect to="/online" />
-                    </Route>
-                  </IonRouterOutlet>
-                  <TabBar />
-                </IonTabs>
-              </IonReactRouter>
+              <GameExitProvider>
+                <BackgroundCanvas />
+                <IonReactRouter>
+                  <RouteFocusReset />
+                  <IonTabs>
+                    <IonRouterOutlet>
+                      <Route exact path="/offline" component={OfflinePage} />
+                      <Route exact path="/offline/game" component={OfflineGamePage} />
+                      <Route exact path="/online" component={OnlinePage} />
+                      <Route exact path="/online/auth" component={AuthScreen} />
+                      <Route exact path="/online/lobby" component={LobbyScreen} />
+                      <Route exact path="/online/waiting/:code" component={WaitingRoom} />
+                      <Route exact path="/online/join" component={JoinRoomForm} />
+                      <Route
+                        exact
+                        path="/online/matchmaking/:mode"
+                        component={MatchmakingQueuePage}
+                      />
+                      <Route exact path="/online/game/:id" component={OnlineGamePage} />
+                      <Route exact path="/leaderboard" component={LeaderboardPage} />
+                      <Route exact path="/">
+                        <Redirect to="/online" />
+                      </Route>
+                    </IonRouterOutlet>
+                    <TabBar />
+                  </IonTabs>
+                </IonReactRouter>
+              </GameExitProvider>
             </LocalGameProvider>
           </AuthProvider>
         </ThemeProvider>

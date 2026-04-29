@@ -24,7 +24,10 @@ async function callBackend(path, body) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || data?.message || 'Backend request failed.');
+    const err = new Error(data?.error || data?.message || 'Backend request failed.');
+    err.status = response.status;
+    err.data = data;
+    throw err;
   }
   return { data };
 }
@@ -51,6 +54,10 @@ export async function submitGameMove({ gameId, row, col }) {
 
 export async function submitGameTimeout({ gameId }) {
   return callBackend('/game/timeout', { gameId });
+}
+
+export async function claimGameTimeout({ gameId }) {
+  return callBackend('/game/claim-timeout', { gameId });
 }
 
 export async function leaveOnlineGame({ gameId }) {

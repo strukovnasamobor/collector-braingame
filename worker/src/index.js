@@ -23,16 +23,67 @@ const MATCHMAKING_STALE_MS_BY_MODE = {
 };
 const MATCHMAKING_STALE_MS = 30 * 1000;
 const STALE_GAME_THRESHOLD_MS = 60 * 1000;
+const STALE_CASUAL_GAME_THRESHOLD_MS = 5 * 60 * 1000;
+const TURN_DURATION_MS = 30 * 1000;
+const TURN_DEADLINE_GRACE_MS = 5 * 1000;
 
-const RANKED_BAND_INITIAL = 100;
-const RANKED_BAND_STEP = 100;
-const RANKED_BAND_INTERVAL_MS = 5 * 1000;
-const RANKED_BAND_MAX = 800;
+const MATCHMAKING_POOL_DIVISOR = 10;
+const MATCHMAKING_POOL_MAX = 1000;
 
-function ratingBandForMode(mode, waitMs) {
-  if (mode !== 'ranked') return Number.POSITIVE_INFINITY;
-  const intervals = Math.floor(Math.max(0, waitMs) / RANKED_BAND_INTERVAL_MS);
-  return Math.min(RANKED_BAND_MAX, RANKED_BAND_INITIAL + RANKED_BAND_STEP * intervals);
+const ALLOWED_GRID_SIZES = new Set([4, 6, 8, 10, 12]);
+const RANKED_GRID_SIZE = 8;
+const ROOM_CODE_PATTERN = /^[A-Z0-9]{6}$/;
+const GAME_ID_PATTERN = /^[A-Za-z0-9_]{1,40}$/;
+const MAX_DISPLAY_NAME_LENGTH = 64;
+
+class HttpError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+    this.exposed = true;
+  }
+}
+
+function clampDisplayName(name) {
+  if (typeof name !== 'string') return '';
+  return name.slice(0, MAX_DISPLAY_NAME_LENGTH);
+}
+
+function parseGridSize(raw, { fallback = 6 } = {}) {
+  const n = Number(raw);
+  return ALLOWED_GRID_SIZES.has(n) ? n : fallback;
+}
+
+function requireGridSize(raw) {
+  const n = Number(raw);
+  if (!ALLOWED_GRID_SIZES.has(n)) {
+    throw new HttpError('Invalid grid size.', 400);
+  }
+  return n;
+}
+
+function requireRoomCode(raw) {
+  const code = String(raw || '').toUpperCase().trim();
+  if (!ROOM_CODE_PATTERN.test(code)) {
+    throw new HttpError('Room code is required.', 400);
+  }
+  return code;
+}
+
+function requireGameId(raw) {
+  const id = String(raw || '');
+  if (!GAME_ID_PATTERN.test(id)) {
+    throw new HttpError('gameId is required.', 400);
+  }
+  return id;
+}
+
+function requireBoardIndex(raw, size, label) {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n >= size) {
+    throw new HttpError(`Invalid ${label}.`, 400);
+  }
+  return n;
 }
 
 let certCache = null;
@@ -87,7 +138,7 @@ function matchmakingCollection(mode) {
   return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_casual';
 }
 function buildPlayerName(entry) {
-  return entry.displayName || entry.email || 'Player';
+  return entry.displayName || 'Player';
 }
 
 function createInitialState(size) {
@@ -565,12 +616,25 @@ async function deleteDocument(env, collectionName, id) {
   return { ok: true };
 }
 
-async function ensurePlayerDoc(env, authUser) {
-  const playerRef = await getDocument(env, 'players', authUser.uid);
-  const current = playerRef?.data || {};
-  const next = {
-    displayName: current.displayName || authUser.name || authUser.email || 'Player',
-    email: current.email || authUser.email || '',
+async function mergePlayerWithRetry(env, uid, mutate, { maxAttempts = 4 } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const fresh = await getDocument(env, 'players', uid);
+    const next = mutate(fresh?.data || {});
+    try {
+      return await writeDocument(env, 'players', uid, next, fresh?.updateTime);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Failed to update player profile after retries.');
+}
+
+async function ensurePlayerDoc(env, authUser, { refreshDisplayName = false } = {}) {
+  const written = await mergePlayerWithRetry(env, authUser.uid, (current) => ({
+    displayName: clampDisplayName(refreshDisplayName
+      ? (authUser.name || current.displayName || 'Player')
+      : (current.displayName || authUser.name || 'Player')),
     mu: Number.isFinite(Number(current.mu)) ? Number(current.mu) : DEFAULT_MU,
     sigma: Number.isFinite(Number(current.sigma)) ? Math.max(MIN_SIGMA, Number(current.sigma)) : DEFAULT_SIGMA,
     rating: Number.isFinite(Number(current.rating)) ? Number(current.rating) : DEFAULT_DISPLAY_RATING,
@@ -580,44 +644,51 @@ async function ensurePlayerDoc(env, authUser) {
     draws: Number(current.draws || 0),
     state: current.state || 'idle',
     updatedAt: new Date().toISOString()
-  };
-  const write = await writeDocument(env, 'players', authUser.uid, next);
-  return write.data;
+  }));
+  return written.data;
 }
 
 async function setPlayerState(env, uid, newState) {
-  const player = await getDocument(env, 'players', uid);
-  const next = {
-    ...(player?.data || {}),
+  return await mergePlayerWithRetry(env, uid, (current) => ({
+    ...current,
+    email: undefined,
     state: newState,
     updatedAt: new Date().toISOString()
-  };
-  // Write unconditionally to ensure state is updated even if updateTime changed.
-  return await writeDocument(env, 'players', uid, next);
+  }));
 }
 
 async function verifyFirebaseIdToken(request, env) {
   const authorization = request.headers.get('Authorization') || '';
   const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-  if (!token) throw new Error('Missing Authorization bearer token.');
+  if (!token) throw new HttpError('Authentication required.', 401);
 
-  const { payload } = await jwtVerify(token, async (header) => {
-    if (!header.kid) throw new Error('Firebase token missing key id.');
-    const certs = await getFirebaseCerts();
-    const pem = certs[header.kid];
-    if (!pem) throw new Error('Firebase cert not found for token kid.');
-    return importX509(pem, 'RS256');
-  }, {
-    audience: env.FIREBASE_PROJECT_ID,
-    issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`
-  });
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, async (header) => {
+      if (!header.kid) throw new Error('Firebase token missing key id.');
+      const certs = await getFirebaseCerts();
+      const pem = certs[header.kid];
+      if (!pem) throw new Error('Firebase cert not found for token kid.');
+      return importX509(pem, 'RS256');
+    }, {
+      audience: env.FIREBASE_PROJECT_ID,
+      issuer: `https://securetoken.google.com/${env.FIREBASE_PROJECT_ID}`
+    }));
+  } catch (_) {
+    throw new HttpError('Authentication required.', 401);
+  }
 
-  if (!isAllowedEmail(payload.email || '')) throw new Error('Only @gmail.com accounts can use this app.');
+  if (payload.email_verified !== true) {
+    throw new HttpError('Email must be verified.', 401);
+  }
+  if (!isAllowedEmail(payload.email || '')) {
+    throw new HttpError('Only @gmail.com accounts can use this app.', 403);
+  }
 
   return {
     uid: payload.user_id || payload.sub,
     email: payload.email || '',
-    name: payload.name || payload.email || ''
+    name: clampDisplayName(payload.name || payload.email || '')
   };
 }
 
@@ -679,6 +750,34 @@ async function queryQueueDocs(env, mode, extraFilters = {}) {
     }));
 }
 
+async function findActiveGameForUser(env, uid) {
+  const response = await firestoreFetch(env, ':runQuery', {
+    method: 'POST',
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'games' }],
+        where: {
+          fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'active' } }
+        }
+      }
+    })
+  });
+  if (!response.ok) return null;
+  const rows = await response.json();
+  for (const row of rows) {
+    if (!row.document) continue;
+    const data = firestoreObjectFromFields(row.document.fields || {});
+    if (data.player1uid === uid || data.player2uid === uid) {
+      return {
+        id: row.document.name?.split('/').pop(),
+        updateTime: row.document.updateTime,
+        data
+      };
+    }
+  }
+  return null;
+}
+
 async function handleProfileEnsure(env, authUser) {
   const profile = await ensurePlayerDoc(env, authUser);
   return corsResponse({ ok: true, profile });
@@ -686,11 +785,11 @@ async function handleProfileEnsure(env, authUser) {
 
 async function handleRoomAction(env, authUser, body) {
   const action = String(body.action || '');
-  const displayName = authUser.name || authUser.email || 'Player';
-  const code = String(body.code || '').toUpperCase().trim();
+  const displayName = clampDisplayName(authUser.name || 'Player');
 
   if (action === 'create') {
-    if (!code || code.length !== 6) return errorResponse('Room code is required.', 400);
+    const code = requireRoomCode(body.code);
+    const gridSize = requireGridSize(body.gridSize);
     const gameId = `game_${code}`;
     await writeDocument(env, 'games', gameId, {
       gameCode: code,
@@ -701,7 +800,7 @@ async function handleRoomAction(env, authUser, body) {
       player1name: displayName,
       player2uid: null,
       player2name: null,
-      gridSize: Number(body.gridSize) || 6,
+      gridSize,
       timerEnabled: !!body.timerEnabled,
       currentPlayer: 1,
       phase: 'place',
@@ -717,7 +816,7 @@ async function handleRoomAction(env, authUser, body) {
   }
 
   if (action === 'join') {
-    if (!code || code.length !== 6) return errorResponse('Room code is required.', 400);
+    const code = requireRoomCode(body.code);
     const gameId = `game_${code}`;
     const game = await getDocument(env, 'games', gameId);
     if (!game) return errorResponse('Room not found.', 404);
@@ -733,13 +832,14 @@ async function handleRoomAction(env, authUser, body) {
       ...current,
       player2uid: authUser.uid,
       player2name: displayName,
-      status: 'active'
+      status: 'active',
+      turnDeadlineMs: current.timerEnabled ? Date.now() + TURN_DURATION_MS : null
     }, game.updateTime);
     return corsResponse({ ok: true, gameId });
   }
 
   if (action === 'cancel') {
-    if (!code || code.length !== 6) return errorResponse('Room code is required.', 400);
+    const code = requireRoomCode(body.code);
     const gameId = `game_${code}`;
     const game = await getDocument(env, 'games', gameId);
     if (!game) return corsResponse({ ok: true });
@@ -760,25 +860,34 @@ async function handleMatchmakingAction(env, authUser, body) {
   const queueCollection = matchmakingCollection(mode);
 
   if (action === 'enqueue') {
-    // Check if player is already in a game or searching
+    // Reject only if there is a *fresh* searching entry; stale entries (e.g. from a tab that
+    // didn't get to call /matchmaking/cancel) are silently overwritten by the write below.
     const existingQueue = await getDocument(env, queueCollection, authUser.uid);
-    if (existingQueue && existingQueue.data.status === 'searching') {
+    if (existingQueue && existingQueue.data.status === 'searching' && isFreshQueueEntry(existingQueue)) {
       return errorResponse('Already searching for a match', 400);
     }
 
-    const profile = await ensurePlayerDoc(env, authUser);
+    const activeGame = await findActiveGameForUser(env, authUser.uid);
+    if (activeGame) {
+      return corsResponse({
+        error: 'You are already in an active game.',
+        activeGameId: activeGame.id
+      }, 409);
+    }
+
+    const profile = await ensurePlayerDoc(env, authUser, { refreshDisplayName: true });
     // Only allow enqueue if player is idle or finished
     if (profile.state !== 'idle' && profile.state !== 'finished') {
       return errorResponse(`Cannot enqueue while in state: ${profile.state}`, 400);
     }
 
+    const queueGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : requireGridSize(body.gridSize);
     const queueData = {
       uid: authUser.uid,
       mode,
       status: 'searching',
-      displayName: authUser.name || authUser.email || '',
-      email: authUser.email || '',
-      gridSize: mode === 'ranked' ? 8 : Number(body.gridSize) || 6,
+      displayName: clampDisplayName(authUser.name || 'Player'),
+      gridSize: queueGridSize,
       timerEnabled: mode === 'ranked' ? true : !!body.timerEnabled,
       mu: profile.mu,
       sigma: profile.sigma,
@@ -797,13 +906,16 @@ async function handleMatchmakingAction(env, authUser, body) {
   }
 
   if (action === 'cancel') {
-    let queue = await getDocument(env, queueCollection, authUser.uid);
-    if (!queue) {
-      await setPlayerState(env, authUser.uid, 'idle');
-      return corsResponse({ ok: true });
+    const profile = await getDocument(env, 'players', authUser.uid);
+    const currentState = profile?.data?.state;
+    const queue = await getDocument(env, queueCollection, authUser.uid);
+    if (queue) {
+      await deleteDocument(env, queueCollection, authUser.uid);
     }
-    await deleteDocument(env, queueCollection, authUser.uid);
-    await setPlayerState(env, authUser.uid, 'idle');
+    // Never reset profile state to 'idle' if the player is mid-game on another device.
+    if (currentState !== 'playing') {
+      await setPlayerState(env, authUser.uid, 'idle');
+    }
     return corsResponse({ ok: true });
   }
 
@@ -839,8 +951,8 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     const now = Date.now();
     const selfDisplayRating = Number(self.rating || DEFAULT_DISPLAY_RATING);
-    const selfJoinedAtMs = Number(self.joinedAtMs) || now;
-    const selfBand = ratingBandForMode(mode, now - selfJoinedAtMs);
+    const selfGridSize = Number(self.gridSize) || 6;
+    const selfTimerEnabled = !!self.timerEnabled;
 
     const liveCandidates = [];
     for (const entry of others) {
@@ -856,35 +968,48 @@ async function handleMatchmakingAction(env, authUser, body) {
       if (entry.data?.status !== 'searching' || entry.data?.matchedWith || entry.data?.gameId) {
         continue;
       }
-      const candRating = Number(entry.data.rating || DEFAULT_DISPLAY_RATING);
-      const candJoinedAtMs = Number(entry.data.joinedAtMs) || now;
-      const candBand = ratingBandForMode(mode, now - candJoinedAtMs);
-      const allowedDiff = Math.min(selfBand, candBand);
-      if (Math.abs(candRating - selfDisplayRating) > allowedDiff) continue;
+      if (mode === 'casual') {
+        const candGrid = Number(entry.data.gridSize) || 6;
+        const candTimer = !!entry.data.timerEnabled;
+        if (candGrid !== selfGridSize || candTimer !== selfTimerEnabled) continue;
+      }
       liveCandidates.push(entry);
     }
 
-    const scored = liveCandidates
-      .map((candidate) => ({
-        candidate,
-        displayRating: Number(candidate.data.rating || DEFAULT_DISPLAY_RATING)
-      }))
-      .sort((a, b) => {
-        const aDiff = Math.abs(a.displayRating - selfDisplayRating);
-        const bDiff = Math.abs(b.displayRating - selfDisplayRating);
-        if (aDiff !== bDiff) return aDiff - bDiff;
-        return (a.candidate.data.joinedAtMs || 0) - (b.candidate.data.joinedAtMs || 0);
-      });
+    const N = liveCandidates.length;
+    if (!N) return corsResponse({ ok: true, gameId: null });
 
-    if (!scored.length) return corsResponse({ ok: true, gameId: null });
-    const closestDiff = Math.abs(scored[0].displayRating - selfDisplayRating);
-    const tied = scored.filter((entry) => Math.abs(entry.displayRating - selfDisplayRating) === closestDiff);
-    const chosen = tied[Math.floor(Math.random() * tied.length)];
+    // Sample-then-closest pairing: pick a uniform random pool of size
+    // K = min(ceil(N/10), 1000), then choose the closest by display rating.
+    // This always pairs whenever ≥1 candidate exists, with no time-based
+    // band widening; rating precision scales smoothly with queue depth.
+    const poolSize = Math.min(Math.ceil(N / MATCHMAKING_POOL_DIVISOR), MATCHMAKING_POOL_MAX);
+    const pool = liveCandidates.slice();
+    for (let i = 0; i < poolSize; i++) {
+      const j = i + Math.floor(Math.random() * (pool.length - i));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    pool.length = poolSize;
+
+    let chosen = null;
+    let bestDiff = Infinity;
+    let bestJoined = Infinity;
+    for (const entry of pool) {
+      const rating = Number(entry.data.rating || DEFAULT_DISPLAY_RATING);
+      const diff = Math.abs(rating - selfDisplayRating);
+      const joined = Number(entry.data.joinedAtMs) || 0;
+      if (diff < bestDiff || (diff === bestDiff && joined < bestJoined)) {
+        bestDiff = diff;
+        bestJoined = joined;
+        chosen = { candidate: entry, displayRating: rating };
+      }
+    }
+    if (!chosen) return corsResponse({ ok: true, gameId: null });
 
     // Deterministic pairing: only the lexicographically smaller UID creates the match.
     // The other player observes their queue doc flip to `matched` via Firestore listener.
     if (authUser.uid >= chosen.candidate.id) {
-      return corsResponse({ ok: true, gameId: null, debug: { reason: 'defer_to_lower_uid' } });
+      return corsResponse({ ok: true, gameId: null });
     }
 
     const candidateQueue = await getDocument(env, queueCollection, chosen.candidate.id);
@@ -902,6 +1027,15 @@ async function handleMatchmakingAction(env, authUser, body) {
     if (liveCandidate.status !== 'searching' || liveCandidate.mode !== mode || liveCandidate.gameId || liveCandidate.matchedWith) {
       return corsResponse({ ok: true, gameId: null });
     }
+    if (mode === 'casual') {
+      const liveSelfGrid = Number(liveSelf.data.gridSize) || 6;
+      const liveSelfTimer = !!liveSelf.data.timerEnabled;
+      const liveCandGrid = Number(liveCandidate.gridSize) || 6;
+      const liveCandTimer = !!liveCandidate.timerEnabled;
+      if (liveCandGrid !== liveSelfGrid || liveCandTimer !== liveSelfTimer) {
+        return corsResponse({ ok: true, gameId: null });
+      }
+    }
 
     const selfJoined = liveSelf.data.joinedAtMs || 0;
     const opponentJoined = liveCandidate.joinedAtMs || 0;
@@ -909,17 +1043,18 @@ async function handleMatchmakingAction(env, authUser, body) {
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
 
-    const gameId = `game_${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+    const gameId = `game_${crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`;
+    const matchGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : parseGridSize(self.gridSize);
     await writeDocument(env, 'games', gameId, {
       gameCode: null,
       mode,
       source: 'matchmaking',
       status: 'active',
       player1uid: selfIsP1 ? authUser.uid : chosen.candidate.id,
-      player1name: buildPlayerName(p1),
+      player1name: clampDisplayName(buildPlayerName(p1)),
       player2uid: selfIsP1 ? chosen.candidate.id : authUser.uid,
-      player2name: buildPlayerName(p2),
-      gridSize: mode === 'ranked' ? 8 : Number(self.gridSize) || 6,
+      player2name: clampDisplayName(buildPlayerName(p2)),
+      gridSize: matchGridSize,
       timerEnabled: mode === 'ranked' ? true : !!self.timerEnabled,
       currentPlayer: 1,
       phase: 'place',
@@ -928,7 +1063,8 @@ async function handleMatchmakingAction(env, authUser, body) {
       placementHistory: { p1: [], p2: [] },
       timeouts: { p1: 0, p2: 0 },
       result: null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      turnDeadlineMs: (mode === 'ranked' || !!self.timerEnabled) ? Date.now() + TURN_DURATION_MS : null
     });
 
     // Stronger guards: verify neither queue entry already references a game
@@ -939,7 +1075,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       } catch (e) {
         // best-effort rollback — ignore failures
       }
-      return corsResponse({ ok: true, gameId: null, debug: { reason: 'race_game_already_assigned' } });
+      return corsResponse({ ok: true, gameId: null });
     }
 
     // Try to update both queue rows; if either update fails, roll back the created game to avoid orphaned matches
@@ -968,7 +1104,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       await setPlayerState(env, authUser.uid, 'playing');
       await setPlayerState(env, chosen.candidate.id, 'playing');
 
-      return corsResponse({ ok: true, gameId, debug: { chosenId: chosen.candidate.id, selfJoinedAtMs: selfJoined, opponentJoinedAtMs: opponentJoined } });
+      return corsResponse({ ok: true, gameId });
     } catch (err) {
       // Rollback: mark game cancelled so frontend won't pick it up as active
       try {
@@ -976,7 +1112,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       } catch (e) {
         // ignore
       }
-      return corsResponse({ ok: true, gameId: null, debug: { reason: 'queue_update_failed', error: err?.message } });
+      return corsResponse({ ok: true, gameId: null });
     }
   }
 
@@ -992,6 +1128,104 @@ async function finalizeMatchCleanup(env, game) {
     try { await deleteDocument(env, queueCollection, uid); } catch (_) {}
     try { await setPlayerState(env, uid, 'idle'); } catch (_) {}
   }));
+}
+
+// Strikes the player whose turn it currently is. Reverts the placed dot if the
+// timeout occurred during the eliminate sub-phase. Used by both the self-report
+// timeout endpoint and the opponent-claim / cron-sweeper paths.
+//
+// Retries on updateTime precondition failure so that heartbeat-spam from the current
+// player can't stall the timeout enforcement — but only as long as the target player
+// still hasn't actually moved (currentPlayer / phase / their placement count unchanged).
+async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) {
+  const initialTarget = gameDoc.data.currentPlayer;
+  const initialPhase = gameDoc.data.phase;
+  const initialHistoryLen = ((gameDoc.data.placementHistory || {})[`p${initialTarget}`] || []).length;
+  let lastError;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      gameDoc = await getDocument(env, 'games', gameId);
+      if (!gameDoc) return { applied: false, reason: 'gone' };
+      const fresh = gameDoc.data;
+      if (fresh.status !== 'active') return { applied: false, reason: 'not_active' };
+      if (fresh.currentPlayer !== initialTarget || fresh.phase !== initialPhase) {
+        return { applied: false, reason: 'player_moved' };
+      }
+      const freshLen = ((fresh.placementHistory || {})[`p${initialTarget}`] || []).length;
+      if (freshLen !== initialHistoryLen) {
+        return { applied: false, reason: 'player_moved' };
+      }
+    }
+
+    const current = gameDoc.data;
+    if (current.status !== 'active') return { applied: false, reason: 'not_active' };
+    const targetPlayerNumber = current.currentPlayer;
+    if (targetPlayerNumber !== 1 && targetPlayerNumber !== 2) {
+      return { applied: false, reason: 'invalid_current_player' };
+    }
+    const size = parseGridSize(current.gridSize);
+    const state = normalizeGameState(current.gameStateJSON, size);
+    const timeouts = current.timeouts || { p1: 0, p2: 0 };
+    const myKey = `p${targetPlayerNumber}`;
+    const newCount = (timeouts[myKey] || 0) + 1;
+
+    let revertedState = state;
+    let revertedHistory = current.placementHistory || { p1: [], p2: [] };
+    if (current.phase === 'eliminate' && current.lastPlaces) {
+      revertedState = deepCopyState(state);
+      const r = current.lastPlaces.row;
+      const c = current.lastPlaces.col;
+      if (revertedState[r] && revertedState[r][c]) {
+        revertedState[r][c].player = null;
+      }
+      const myHist = historyToArray(revertedHistory[myKey] || []);
+      myHist.pop();
+      revertedHistory = {
+        p1: historyToArray(revertedHistory.p1 || []),
+        p2: historyToArray(revertedHistory.p2 || []),
+        [myKey]: myHist
+      };
+    }
+
+    try {
+      if (newCount >= 3) {
+        const s1 = getBiggestGroup(revertedState, size, 1);
+        const s2 = getBiggestGroup(revertedState, size, 2);
+        const winner = targetPlayerNumber === 1 ? 2 : 1;
+        const finishedGame = {
+          ...current,
+          status: 'finished',
+          gameStateJSON: JSON.stringify(revertedState),
+          placementHistory: revertedHistory,
+          lastPlaces: null,
+          result: { winner, score1: s1, score2: s2, timeout: true, loser: targetPlayerNumber },
+          timeouts: { ...timeouts, [myKey]: newCount },
+          turnDeadlineMs: null
+        };
+        await writeDocument(env, 'games', gameId, finishedGame, gameDoc.updateTime);
+        await finalizeMatchCleanup(env, finishedGame);
+        return { applied: true, finished: true };
+      }
+
+      const nextDeadline = current.timerEnabled ? Date.now() + TURN_DURATION_MS : null;
+      await writeDocument(env, 'games', gameId, {
+        ...current,
+        currentPlayer: targetPlayerNumber === 1 ? 2 : 1,
+        phase: 'place',
+        lastPlaces: null,
+        gameStateJSON: JSON.stringify(revertedState),
+        placementHistory: revertedHistory,
+        timeouts: { ...timeouts, [myKey]: newCount },
+        turnDeadlineMs: nextDeadline
+      }, gameDoc.updateTime);
+      return { applied: true, finished: false };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('applyTurnTimeout: precondition failed after retries');
 }
 
 async function applyRankedForfeit(env, gameDoc, gameId, forfeitingUid) {
@@ -1012,7 +1246,7 @@ async function applyRankedForfeit(env, gameDoc, gameId, forfeitingUid) {
   const scoreP1 = forfeiterIsP1 ? 0 : 1;
   const { delta1, delta2, newR1, newR2, profile1, profile2 } = computeSkillDelta(p1, p2, scoreP1);
 
-  const size = Number(current.gridSize) || 6;
+  const size = parseGridSize(current.gridSize);
   const state = normalizeGameState(current.gameStateJSON, size);
   const score1 = getBiggestGroup(state, size, 1);
   const score2 = getBiggestGroup(state, size, 2);
@@ -1021,6 +1255,7 @@ async function applyRankedForfeit(env, gameDoc, gameId, forfeitingUid) {
     ...current,
     status: 'finished',
     leftBy: forfeitingUid,
+    turnDeadlineMs: null,
     result: {
       winner: opponentNumber,
       score1,
@@ -1034,43 +1269,43 @@ async function applyRankedForfeit(env, gameDoc, gameId, forfeitingUid) {
     }
   };
   // Conditional on the game's updateTime so two concurrent forfeits cannot both apply rating.
+  // The losing call gets 412 here and bails before touching player profiles.
   await writeDocument(env, 'games', gameId, finishedGame, gameDoc.updateTime);
 
-  await writeDocument(env, 'players', current.player1uid, {
-    ...p1Raw,
-    displayName: p1Raw.displayName || current.player1name,
-    email: p1Raw.email || '',
+  await mergePlayerWithRetry(env, current.player1uid, (raw) => ({
+    ...raw,
+    email: undefined,
+    displayName: clampDisplayName(raw.displayName || current.player1name || 'Player'),
     mu: profile1.mu,
     sigma: profile1.sigma,
     rating: newR1,
-    games: Number(p1Raw.games || 0) + 1,
-    wins: scoreP1 === 1 ? Number(p1Raw.wins || 0) + 1 : Number(p1Raw.wins || 0),
-    losses: scoreP1 === 0 ? Number(p1Raw.losses || 0) + 1 : Number(p1Raw.losses || 0),
-    draws: Number(p1Raw.draws || 0),
+    games: Number(raw.games || 0) + 1,
+    wins: scoreP1 === 1 ? Number(raw.wins || 0) + 1 : Number(raw.wins || 0),
+    losses: scoreP1 === 0 ? Number(raw.losses || 0) + 1 : Number(raw.losses || 0),
+    draws: Number(raw.draws || 0),
     updatedAt: new Date().toISOString()
-  });
+  }));
 
-  await writeDocument(env, 'players', current.player2uid, {
-    ...p2Raw,
-    displayName: p2Raw.displayName || current.player2name,
-    email: p2Raw.email || '',
+  await mergePlayerWithRetry(env, current.player2uid, (raw) => ({
+    ...raw,
+    email: undefined,
+    displayName: clampDisplayName(raw.displayName || current.player2name || 'Player'),
     mu: profile2.mu,
     sigma: profile2.sigma,
     rating: newR2,
-    games: Number(p2Raw.games || 0) + 1,
-    wins: scoreP1 === 0 ? Number(p2Raw.wins || 0) + 1 : Number(p2Raw.wins || 0),
-    losses: scoreP1 === 1 ? Number(p2Raw.losses || 0) + 1 : Number(p2Raw.losses || 0),
-    draws: Number(p2Raw.draws || 0),
+    games: Number(raw.games || 0) + 1,
+    wins: scoreP1 === 0 ? Number(raw.wins || 0) + 1 : Number(raw.wins || 0),
+    losses: scoreP1 === 1 ? Number(raw.losses || 0) + 1 : Number(raw.losses || 0),
+    draws: Number(raw.draws || 0),
     updatedAt: new Date().toISOString()
-  });
+  }));
 
   await finalizeMatchCleanup(env, finishedGame);
   return finishedGame;
 }
 
 async function handleGameValidate(env, authUser, body) {
-  const gameId = String(body.gameId || '');
-  if (!gameId) return errorResponse('gameId is required.', 400);
+  const gameId = requireGameId(body.gameId);
   const game = await getDocument(env, 'games', gameId);
   if (!game) return corsResponse({ ok: true, valid: false });
   const current = game.data;
@@ -1081,8 +1316,7 @@ async function handleGameValidate(env, authUser, body) {
 
 async function handleGameAction(env, authUser, body) {
   const action = String(body.action || '');
-  const gameId = String(body.gameId || '');
-  if (!gameId) return errorResponse('gameId is required.', 400);
+  const gameId = requireGameId(body.gameId);
 
   if (action === 'join') {
     const game = await getDocument(env, 'games', gameId);
@@ -1098,8 +1332,6 @@ async function handleGameAction(env, authUser, body) {
   }
 
   if (action === 'move') {
-    const row = Number(body.row);
-    const col = Number(body.col);
     const game = await getDocument(env, 'games', gameId);
     if (!game) return errorResponse('Game not found.', 404);
     const current = game.data;
@@ -1111,7 +1343,19 @@ async function handleGameAction(env, authUser, body) {
     const playerNumber = current.player1uid === authUser.uid ? 1 : 2;
     if (current.currentPlayer !== playerNumber) return errorResponse('Not your turn.', 412);
 
-    const size = Number(current.gridSize) || 6;
+    // Hard deadline enforcement: a move arriving past the turn deadline + grace is rejected
+    // so the wall-clock timer is actually binding (otherwise the deadline is only enforced by
+    // the opponent's claim-timeout call or the cron sweep, leaving a window for stalled moves).
+    if (current.timerEnabled) {
+      const deadline = Number(current.turnDeadlineMs);
+      if (Number.isFinite(deadline) && deadline > 0 && Date.now() > deadline + TURN_DEADLINE_GRACE_MS) {
+        return errorResponse('Turn has timed out.', 412);
+      }
+    }
+
+    const size = parseGridSize(current.gridSize);
+    const row = requireBoardIndex(body.row, size, 'row');
+    const col = requireBoardIndex(body.col, size, 'col');
     const state = normalizeGameState(current.gameStateJSON, size);
     const history = current.placementHistory || { p1: [], p2: [] };
 
@@ -1125,14 +1369,18 @@ async function handleGameAction(env, authUser, body) {
         p2: historyToArray(history.p2)
       };
       nextHistory[`p${playerNumber}`].push({ r: row, c: col });
-      await writeDocument(env, 'games', gameId, {
-        ...current,
-        phase: 'eliminate',
-        lastPlaces: { row, col },
-        gameStateJSON: JSON.stringify(nextState),
-        placementHistory: nextHistory,
-        timeouts: { ...(current.timeouts || { p1: 0, p2: 0 }), [`p${playerNumber}`]: 0 }
-      });
+      try {
+        await writeDocument(env, 'games', gameId, {
+          ...current,
+          phase: 'eliminate',
+          lastPlaces: { row, col },
+          gameStateJSON: JSON.stringify(nextState),
+          placementHistory: nextHistory,
+          timeouts: { ...(current.timeouts || { p1: 0, p2: 0 }), [`p${playerNumber}`]: 0 }
+        }, game.updateTime);
+      } catch (_) {
+        return errorResponse('Game state changed. Please retry.', 409);
+      }
       return corsResponse({ ok: true });
     }
 
@@ -1155,11 +1403,17 @@ async function handleGameAction(env, authUser, body) {
       if (result) {
         update.status = 'finished';
         update.result = result;
+        update.turnDeadlineMs = null;
       } else {
         update.currentPlayer = playerNumber === 1 ? 2 : 1;
         update.phase = 'place';
+        update.turnDeadlineMs = current.timerEnabled ? Date.now() + TURN_DURATION_MS : null;
       }
-      await writeDocument(env, 'games', gameId, update);
+      try {
+        await writeDocument(env, 'games', gameId, update, game.updateTime);
+      } catch (_) {
+        return errorResponse('Game state changed. Please retry.', 409);
+      }
       if (result) await finalizeMatchCleanup(env, update);
       return corsResponse({ ok: true });
     }
@@ -1178,35 +1432,57 @@ async function handleGameAction(env, authUser, body) {
     const playerNumber = current.player1uid === authUser.uid ? 1 : 2;
     if (current.currentPlayer !== playerNumber) return errorResponse('Not your turn.', 412);
 
-    const size = Number(current.gridSize) || 6;
-    const state = normalizeGameState(current.gameStateJSON, size);
-    const timeouts = current.timeouts || { p1: 0, p2: 0 };
-    const myKey = `p${playerNumber}`;
-    const isFullSkip = current.phase === 'place';
-    const newCount = isFullSkip ? (timeouts[myKey] || 0) + 1 : timeouts[myKey] || 0;
-
-    if (newCount >= 3) {
-      const s1 = getBiggestGroup(state, size, 1);
-      const s2 = getBiggestGroup(state, size, 2);
-      const winner = playerNumber === 1 ? 2 : 1;
-      const finishedGame = {
-        ...current,
-        status: 'finished',
-        result: { winner, score1: s1, score2: s2, timeout: true, loser: playerNumber },
-        timeouts: { ...timeouts, [myKey]: newCount }
-      };
-      await writeDocument(env, 'games', gameId, finishedGame);
-      await finalizeMatchCleanup(env, finishedGame);
-      return corsResponse({ ok: true });
+    // Self-report timeout requires the wall-clock deadline to have actually expired —
+    // otherwise a player could call this mid-turn to force-revert their own placement
+    // (eliminate-phase rollback in applyTurnTimeout) and probe positions for free.
+    if (!current.timerEnabled) {
+      return errorResponse('Timer is not enabled for this game.', 412);
+    }
+    const deadline = Number(current.turnDeadlineMs);
+    if (!Number.isFinite(deadline) || deadline <= 0) {
+      return errorResponse('No turn deadline set.', 412);
+    }
+    if (Date.now() < deadline) {
+      return errorResponse('Turn has not timed out yet.', 412);
     }
 
-    await writeDocument(env, 'games', gameId, {
-      ...current,
-      currentPlayer: playerNumber === 1 ? 2 : 1,
-      phase: 'place',
-      lastPlaces: null,
-      timeouts: { ...timeouts, [myKey]: newCount }
-    });
+    try {
+      await applyTurnTimeout(env, game, gameId);
+    } catch (_) {
+      return errorResponse('Game state changed. Please retry.', 409);
+    }
+    return corsResponse({ ok: true });
+  }
+
+  if (action === 'claim-timeout') {
+    const game = await getDocument(env, 'games', gameId);
+    if (!game) return errorResponse('Game not found.', 404);
+    const current = game.data;
+    if (current.status !== 'active') return errorResponse('Game is not active.', 412);
+    if (current.player1uid !== authUser.uid && current.player2uid !== authUser.uid) {
+      return errorResponse('Only participants can claim timeout.', 403);
+    }
+    const callerNumber = current.player1uid === authUser.uid ? 1 : 2;
+    // Only the OPPONENT (the non-current player) can claim a timeout.
+    if (current.currentPlayer === callerNumber) {
+      return errorResponse('Cannot claim timeout on your own turn.', 412);
+    }
+    if (!current.timerEnabled) {
+      return errorResponse('Timer is not enabled for this game.', 412);
+    }
+    const deadline = Number(current.turnDeadlineMs);
+    if (!Number.isFinite(deadline) || deadline <= 0) {
+      return errorResponse('No turn deadline set.', 412);
+    }
+    if (Date.now() < deadline) {
+      return errorResponse('Turn has not timed out yet.', 412);
+    }
+
+    try {
+      await applyTurnTimeout(env, game, gameId);
+    } catch (_) {
+      return errorResponse('Game state changed. Please retry.', 409);
+    }
     return corsResponse({ ok: true });
   }
 
@@ -1269,8 +1545,7 @@ async function handleGameAction(env, authUser, body) {
 }
 
 async function handleRankedFinalize(env, authUser, body) {
-  const gameId = String(body.gameId || '');
-  if (!gameId) return errorResponse('gameId is required.', 400);
+  const gameId = requireGameId(body.gameId);
 
   const game = await getDocument(env, 'games', gameId);
   if (!game) return errorResponse('Game not found.', 404);
@@ -1289,54 +1564,56 @@ async function handleRankedFinalize(env, authUser, body) {
     getDocument(env, 'players', current.player1uid),
     getDocument(env, 'players', current.player2uid)
   ]);
-  const p1Raw = p1Doc?.data || {};
-  const p2Raw = p2Doc?.data || {};
-  const p1 = normalizeSkillProfile(p1Raw);
-  const p2 = normalizeSkillProfile(p2Raw);
+  const p1 = normalizeSkillProfile(p1Doc?.data || {});
+  const p2 = normalizeSkillProfile(p2Doc?.data || {});
   const scoreP1 = current.result.winner === 1 ? 1 : current.result.winner === 2 ? 0 : 0.5;
   const { delta1, delta2, newR1, newR2, profile1, profile2 } = computeSkillDelta(p1, p2, scoreP1);
 
-  await writeDocument(env, 'players', current.player1uid, {
-    ...p1Raw,
-    displayName: p1Raw.displayName || current.player1name,
-    email: p1Raw.email || '',
+  const result = { ...current.result, delta1, delta2, newR1, newR2 };
+
+  // Claim the finalization slot atomically. If a concurrent call already wrote the deltas,
+  // our precondition fails — we re-read and return the winning result without re-applying.
+  try {
+    await writeDocument(env, 'games', gameId, { ...current, result }, game.updateTime);
+  } catch (_) {
+    const refreshed = await getDocument(env, 'games', gameId);
+    const refreshedResult = refreshed?.data?.result;
+    if (refreshedResult?.delta1 != null && refreshedResult?.delta2 != null) {
+      return corsResponse({ ok: true, result: refreshedResult });
+    }
+    return errorResponse('Game state changed. Please retry.', 409);
+  }
+
+  // Slot claimed — apply player profile updates with their own retry loop so concurrent
+  // ensurePlayerDoc / setPlayerState calls cannot clobber the games/wins/losses counters.
+  await mergePlayerWithRetry(env, current.player1uid, (raw) => ({
+    ...raw,
+    email: undefined,
+    displayName: clampDisplayName(raw.displayName || current.player1name || 'Player'),
     mu: profile1.mu,
     sigma: profile1.sigma,
     rating: newR1,
-    games: Number(p1Raw.games || 0) + 1,
-    wins: scoreP1 === 1 ? Number(p1Raw.wins || 0) + 1 : Number(p1Raw.wins || 0),
-    losses: scoreP1 === 0 ? Number(p1Raw.losses || 0) + 1 : Number(p1Raw.losses || 0),
-    draws: scoreP1 === 0.5 ? Number(p1Raw.draws || 0) + 1 : Number(p1Raw.draws || 0),
+    games: Number(raw.games || 0) + 1,
+    wins: scoreP1 === 1 ? Number(raw.wins || 0) + 1 : Number(raw.wins || 0),
+    losses: scoreP1 === 0 ? Number(raw.losses || 0) + 1 : Number(raw.losses || 0),
+    draws: scoreP1 === 0.5 ? Number(raw.draws || 0) + 1 : Number(raw.draws || 0),
     updatedAt: new Date().toISOString()
-  });
+  }));
 
-  await writeDocument(env, 'players', current.player2uid, {
-    ...p2Raw,
-    displayName: p2Raw.displayName || current.player2name,
-    email: p2Raw.email || '',
+  await mergePlayerWithRetry(env, current.player2uid, (raw) => ({
+    ...raw,
+    email: undefined,
+    displayName: clampDisplayName(raw.displayName || current.player2name || 'Player'),
     mu: profile2.mu,
     sigma: profile2.sigma,
     rating: newR2,
-    games: Number(p2Raw.games || 0) + 1,
-    wins: scoreP1 === 0 ? Number(p2Raw.wins || 0) + 1 : Number(p2Raw.wins || 0),
-    losses: scoreP1 === 1 ? Number(p2Raw.losses || 0) + 1 : Number(p2Raw.losses || 0),
-    draws: scoreP1 === 0.5 ? Number(p2Raw.draws || 0) + 1 : Number(p2Raw.draws || 0),
+    games: Number(raw.games || 0) + 1,
+    wins: scoreP1 === 0 ? Number(raw.wins || 0) + 1 : Number(raw.wins || 0),
+    losses: scoreP1 === 1 ? Number(raw.losses || 0) + 1 : Number(raw.losses || 0),
+    draws: scoreP1 === 0.5 ? Number(raw.draws || 0) + 1 : Number(raw.draws || 0),
     updatedAt: new Date().toISOString()
-  });
+  }));
 
-  const result = {
-    ...current.result,
-    delta1,
-    delta2,
-    newR1,
-    newR2
-  };
-  await writeDocument(env, 'games', gameId, {
-    ...current,
-    result
-  });
-
-  // Set both players back to idle after game finalized
   await setPlayerState(env, current.player1uid, 'idle');
   await setPlayerState(env, current.player2uid, 'idle');
 
@@ -1378,6 +1655,7 @@ async function handleRequest(request, env) {
   if (
     url.pathname === '/game/move' ||
     url.pathname === '/game/timeout' ||
+    url.pathname === '/game/claim-timeout' ||
     url.pathname === '/game/leave' ||
     url.pathname === '/game/join' ||
     url.pathname === '/game/heartbeat'
@@ -1401,13 +1679,7 @@ async function sweepStaleGames(env) {
         structuredQuery: {
           from: [{ collectionId: 'games' }],
           where: {
-            compositeFilter: {
-              op: 'AND',
-              filters: [
-                { fieldFilter: { field: { fieldPath: 'mode' }, op: 'EQUAL', value: { stringValue: 'ranked' } } },
-                { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'active' } } }
-              ]
-            }
+            fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'active' } }
           }
         }
       })
@@ -1427,10 +1699,26 @@ async function sweepStaleGames(env) {
     }));
 
   const now = Date.now();
-  const cutoff = now - STALE_GAME_THRESHOLD_MS;
 
   for (const game of games) {
     const data = game.data || {};
+    const isRanked = data.mode === 'ranked';
+
+    // Turn-deadline enforcement: if the active player blew through their per-turn budget
+    // (timer-enabled games only), force-strike them via applyTurnTimeout. Done first because
+    // it's the cheap, common case.
+    const deadline = Number(data.turnDeadlineMs);
+    if (data.timerEnabled && Number.isFinite(deadline) && deadline > 0
+        && now > deadline + TURN_DEADLINE_GRACE_MS) {
+      try {
+        await applyTurnTimeout(env, game, game.id);
+      } catch (_) {
+        // Race: a real move, leave, or claim-timeout landed first. Skip; next tick reassesses.
+      }
+      continue;
+    }
+
+    const cutoff = now - (isRanked ? STALE_GAME_THRESHOLD_MS : STALE_CASUAL_GAME_THRESHOLD_MS);
     const createdFloor = Number(data.createdAtMs) || Date.parse(data.createdAt || '') || now;
     const lastP1 = Number(data.lastSeenP1Ms) || createdFloor;
     const lastP2 = Number(data.lastSeenP2Ms) || createdFloor;
@@ -1439,12 +1727,12 @@ async function sweepStaleGames(env) {
     if (!p1Stale && !p2Stale) continue;
 
     try {
-      if (p1Stale && p2Stale) {
-        // Both sides went silent — cancel without rating change so neither player is punished.
+      if (!isRanked || (p1Stale && p2Stale)) {
+        // Casual: always cancel (no rating consequence). Ranked w/ both silent: same.
         const cancelledGame = {
           ...data,
           status: 'cancelled',
-          cancelledReason: 'both_abandoned',
+          cancelledReason: isRanked ? 'both_abandoned' : 'casual_abandoned',
           cancelledAt: new Date().toISOString()
         };
         await writeDocument(env, 'games', game.id, cancelledGame, game.updateTime);
@@ -1466,7 +1754,11 @@ export default {
     try {
       return await handleRequest(request, env);
     } catch (error) {
-      return errorResponse(error?.message || 'Internal server error.', 500);
+      if (error instanceof HttpError) {
+        return errorResponse(error.message, error.status);
+      }
+      console.error('worker: unhandled error', error);
+      return errorResponse('Internal server error.', 500);
     }
   },
   async scheduled(event, env, ctx) {

@@ -3,20 +3,17 @@ import { useHistory } from 'react-router-dom';
 import {
   IonPage,
   IonContent,
-  IonButton,
-  IonAlert,
-  IonIcon
+  IonAlert
 } from '@ionic/react';
-import { homeOutline, refreshOutline } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
 import { useI18n } from '../contexts/I18nContext';
 import { useLocalGame } from '../contexts/LocalGameContext';
 import { useGameTimer } from '../hooks/useGameTimer';
-import { useState } from 'react';
+import { useGameExit } from '../contexts/GameExitContext';
 
 export default function OfflineGamePage() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const history = useHistory();
   const {
     config,
@@ -28,16 +25,26 @@ export default function OfflineGamePage() {
     result,
     turnKey,
     placeDot,
-    resetGame,
     clearGame,
     onTimeout,
     isActive
   } = useLocalGame();
-  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const { registerExit, clearExit } = useGameExit();
 
   useEffect(() => {
     if (!config) history.replace('/offline');
   }, [config, history]);
+
+  useEffect(() => {
+    registerExit({
+      tabRoot: '/offline',
+      onConfirm: () => {
+        clearGame();
+        history.replace('/offline');
+      }
+    });
+    return () => clearExit('/offline');
+  }, [registerExit, clearExit, clearGame, history]);
 
   const seconds = useGameTimer({
     enabled: !!config && !!config.timerEnabled && isActive,
@@ -47,20 +54,12 @@ export default function OfflineGamePage() {
 
   if (!config) return null;
 
-  const resetButtonLabel = lang === 'hr' ? 'Resetiraj' : t('game.reset_button');
-  const menuButtonLabel = lang === 'hr' ? 'Izbornik' : t('game.back_to_menu_button');
-
   const name = currentPlayer === 1 ? config.player1Name : config.player2Name;
   const statusText =
     phase === 'place'
       ? t('game.phase_place', { player: name })
       : t('game.phase_eliminate', { player: name });
   const statusColor = currentPlayer === 1 ? '#dc3545' : '#007bff';
-
-  const handleMainMenu = () => {
-    clearGame();
-    history.push('/offline');
-  };
 
   const buildGameOverMessage = () => {
     if (!result) return '';
@@ -93,9 +92,6 @@ export default function OfflineGamePage() {
               </div>
               <div className="sk-player-score">{scores[1]}</div>
             </div>
-            <div className="sk-status sk-status-desktop" style={{ color: statusColor }}>
-              {isActive ? statusText : ''}
-            </div>
             <div className={`sk-player-info${currentPlayer === 2 ? ' active' : ''}`}>
               <div className="sk-player-name" style={{ color: '#007bff' }}>
                 {config.player2Name}
@@ -103,10 +99,6 @@ export default function OfflineGamePage() {
               <div className="sk-player-score">{scores[2]}</div>
             </div>
           </div>
-
-          {config.timerEnabled && isActive && (
-            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>{seconds}</div>
-          )}
 
           <GameBoard
             state={state}
@@ -116,37 +108,14 @@ export default function OfflineGamePage() {
             disabled={!isActive}
           />
 
-          <div className="sk-game-controls">
-            <IonButton className="sk-game-btn sk-game-btn-reset" onClick={() => setConfirmResetOpen(true)} fill="solid">
-              <IonIcon slot="start" icon={refreshOutline} />
-              {resetButtonLabel}
-            </IonButton>
-            <IonButton className="sk-game-btn sk-game-btn-menu" onClick={handleMainMenu} fill="solid">
-              <IonIcon slot="start" icon={homeOutline} />
-              {menuButtonLabel}
-            </IonButton>
-          </div>
+          {config.timerEnabled && isActive && (
+            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>{seconds}</div>
+          )}
 
-          <div className="sk-status sk-status-mobile" style={{ color: statusColor }}>
+          <div className="sk-status" style={{ color: statusColor }}>
             {isActive ? statusText : ''}
           </div>
         </div>
-
-        <IonAlert
-          isOpen={confirmResetOpen}
-          onDidDismiss={() => setConfirmResetOpen(false)}
-          header={t('game.confirm_reset_title')}
-          message={t('game.confirm_reset_message')}
-          buttons={[
-            { text: t('game.no_button'), role: 'cancel' },
-            {
-              text: t('game.yes_button'),
-              handler: () => {
-                resetGame();
-              }
-            }
-          ]}
-        />
 
         <IonAlert
           cssClass="sk-alert-pre"
@@ -163,7 +132,7 @@ export default function OfflineGamePage() {
               }
             },
             {
-              text: t('game.main_menu_button'),
+              text: t('notifications.ok_button'),
               role: 'cancel',
               handler: () => {
                 clearGame();

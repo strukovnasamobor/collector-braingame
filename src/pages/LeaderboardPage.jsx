@@ -8,7 +8,6 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import AppHeader from '../components/AppHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { db } from '../../firebase';
-import { getEmailLocalPart } from '../utils/emailDisplay';
 
 function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
   if (!rows || rows.length === 0) {
@@ -55,7 +54,7 @@ export default function LeaderboardPage() {
       .then((snap) => {
         if (cancelled) return;
         const arr = [];
-        snap.forEach((d) => arr.push(d.data()));
+        snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
         setOnlinePlayers(arr);
       })
       .catch((e) => {
@@ -89,8 +88,8 @@ export default function LeaderboardPage() {
                 rows={onlinePlayers}
                 t={t}
                 empty={t('leaderboard.empty_online')}
-                keyFn={(p) => p.email || p.displayName || Math.random()}
-                renderName={(p) => p.displayName || (p.email ? getEmailLocalPart(p.email) : '')}
+                keyFn={(p) => p.id || p.displayName}
+                renderName={(p) => p.displayName || 'Player'}
                 renderRating={(p) => p.rating}
               />
             )}

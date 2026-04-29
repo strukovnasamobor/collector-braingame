@@ -11,18 +11,6 @@ service cloud.firestore {
       );
     }
 
-    function gameCoreFieldsUnchanged() {
-      return request.resource.data.mode == resource.data.mode
-        && request.resource.data.source == resource.data.source
-        && request.resource.data.player1uid == resource.data.player1uid
-        && request.resource.data.player2uid == resource.data.player2uid
-        && request.resource.data.player1name == resource.data.player1name
-        && request.resource.data.player2name == resource.data.player2name
-        && request.resource.data.gridSize == resource.data.gridSize
-        && request.resource.data.timerEnabled == resource.data.timerEnabled
-        && request.resource.data.createdAt == resource.data.createdAt;
-    }
-
     match /players/{userId} {
       // Allow public reads for the leaderboard (no auth required).
       allow read: if true;

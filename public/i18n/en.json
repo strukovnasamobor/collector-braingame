@@ -53,7 +53,9 @@
     "matchmaking_searching": "Searching for an opponent...",
     "matchmaking_ranked": "Ranked queue",
     "matchmaking_casual": "Casual queue",
-    "matchmaking_error": "Failed to start matchmaking. Please try again."
+    "matchmaking_error": "Failed to start matchmaking. Please try again.",
+    "stop_search_title": "Stop searching?",
+    "stop_search_message": "Are you sure you want to stop finding an opponent and leave the queue?"
   },
   "game": {
     "new_game_dialog": "New Game",
@@ -73,6 +75,8 @@
     "reset_game": "Reset Game",
     "confirm_reset_title": "Reset Game",
     "confirm_reset_message": "Are you sure you want to reset the game?",
+    "quit_game_title": "Quit Game?",
+    "quit_game_message": "Are you sure you want to quit the current game?",
     "yes_button": "Yes",
     "no_button": "No",
     "reset_button": "Reset Game",
@@ -148,6 +152,7 @@
     "player_timeout": "Player timed out",
     "ok_button": "OK",
     "room_not_found": "Room not found or game has already started.",
-    "enter_code": "Enter a room code!"
+    "enter_code": "Enter a room code!",
+    "move_rejected": "Move rejected. Please try again."
   }
 }

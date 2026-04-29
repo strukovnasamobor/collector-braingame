@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHistory, useLocation, useParams } from 'react-router-dom';
 import {
     IonPage,
@@ -11,6 +11,7 @@ import { closeCircleOutline } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useGameExit } from '../contexts/GameExitContext';
 import {
     enqueueForMatch,
     listenForMatch,
@@ -75,10 +76,10 @@ export default function MatchmakingQueuePage() {
         const start = async () => {
             try {
                 const isRanked = safeMode === 'ranked';
-                // Always cancel any previous matchmaking to clear stale queue state
+                // Always cancel any previous matchmaking to clear stale queue state.
+                // The worker enqueue handler accepts overwrite of stale entries, so no
+                // propagation sleep is needed here.
                 await cancelMatchmaking(user.uid, safeMode);
-                // Wait a moment for deletion to propagate through Firestore
-                await new Promise((resolve) => setTimeout(resolve, 500));
 
                 await enqueueForMatch({
                     user,
@@ -117,7 +118,14 @@ export default function MatchmakingQueuePage() {
                     void heartbeatMatchmaking(safeMode).catch(() => { });
                 }, 10000);
             } catch (e) {
-                if (active) setError(e.message || t('lobby.matchmaking_error'));
+                if (!active) return;
+                // Backend says we're already in an active game — reconnect instead of erroring out.
+                const reconnectId = e?.data?.activeGameId;
+                if (reconnectId) {
+                    history.replace(`/online/game/${reconnectId}`);
+                    return;
+                }
+                setError(e.message || t('lobby.matchmaking_error'));
             }
         };
 
@@ -138,7 +146,7 @@ export default function MatchmakingQueuePage() {
         t
     ]);
 
-    const cancel = async () => {
+    const cancel = useCallback(async () => {
         if (!user || cancelling) {
             history.replace('/online/lobby');
             return;
@@ -151,7 +159,18 @@ export default function MatchmakingQueuePage() {
         } finally {
             history.replace('/online/lobby');
         }
-    };
+    }, [user, cancelling, safeMode, history]);
+
+    const { registerExit, clearExit } = useGameExit();
+    useEffect(() => {
+        registerExit({
+            tabRoot: '/online',
+            title: t('lobby.stop_search_title'),
+            message: t('lobby.stop_search_message'),
+            onConfirm: cancel
+        });
+        return () => clearExit('/online');
+    }, [registerExit, clearExit, cancel, t]);
 
     const modeLabel =
         safeMode === 'ranked' ? t('lobby.matchmaking_ranked') : t('lobby.matchmaking_casual');

@@ -1,5 +1,4 @@
-? check matchmaking and multiple device same user login, changing name of Google Account
-? check for security vulnerabilities
+
 
 Ver. 1.0 (1)
 - remove printing logs
