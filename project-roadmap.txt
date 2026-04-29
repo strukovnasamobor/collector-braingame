@@ -1,10 +1,9 @@
-- AppCheck
-
 ? check matchmaking and multiple device same user login, changing name of Google Account
 ? check for security vulnerabilities
 
 Ver. 1.0 (1)
-- remove printing logs, activate app check, deploy and make TWA with PWA Web Builder
+- remove printing logs
+- deploy and make TWA with PWA Web Builder
 - Github add tag and upload apk and zipped dist folder
 - Google Play Store new edition
 - check readme file link to google play store
