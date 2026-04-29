@@ -63,7 +63,7 @@ export default function App() {
                     <Route exact path="/online/game/:id" component={OnlineGamePage} />
                     <Route exact path="/leaderboard" component={LeaderboardPage} />
                     <Route exact path="/">
-                      <Redirect to="/offline" />
+                      <Redirect to="/online" />
                     </Route>
                   </IonRouterOutlet>
                   <TabBar />
