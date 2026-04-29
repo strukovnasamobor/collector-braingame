@@ -6,7 +6,7 @@ import {
   getRedirectResult,
   signOut as fbSignOut
 } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import { auth, googleProvider } from '../../firebase';
 import { ensurePlayerProfile } from '../services/firebaseActions';
 
 const AuthContext = createContext(null);

@@ -2,7 +2,7 @@ import {
     doc,
     onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../../firebase';
 import { enqueueForMatch as enqueueForMatchCall, runMatchmaker as runMatchmakerCall, cancelMatchmaking as cancelMatchmakingCall, heartbeatMatchmaking as heartbeatMatchmakingCall } from '../services/firebaseActions';
 import { validateGame as validateGameCall } from '../services/firebaseActions';
 

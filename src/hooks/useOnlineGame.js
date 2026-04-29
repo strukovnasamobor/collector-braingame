@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db } from '../../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useFirestoreGame } from './useFirestoreGame';
 import { normalizeHistory } from '../utils/coordinateNormalization';

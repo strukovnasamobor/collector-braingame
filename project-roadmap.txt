@@ -1,0 +1,12 @@
+- commit, deploy
+- firestore and firestore rules
+- worker
+- AppCheck
+
+? check matchmaking
+? check for security vulnerabilities
+
+Ver. 1.0 (1)
+- Github add tag and upload apk and zipped dist folder
+- Google Play Store new edition
+- check readme file link to google play store

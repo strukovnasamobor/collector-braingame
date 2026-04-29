@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "collector-braingame": "collector-braingame",
+    "default": "collector-braingame"
+  },
+  "targets": {},
+  "etags": {}
+}
