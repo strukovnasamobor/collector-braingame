@@ -10,7 +10,7 @@ export default defineConfig({
       includeAssets: ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png', 'i18n/en.json', 'i18n/hr.json'],
       manifest: {
         name: 'Collector BrainGame',
-        short_name: 'Collector BrainGame',
+        short_name: 'Collector BG',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
