@@ -28,7 +28,9 @@ export default function OnlineGamePage() {
     exists,
     state,
     history: placementHistory,
+    serverHistory,
     scores,
+    serverScores,
     myPlayerNumber,
     ratings,
     placeDot,
@@ -51,7 +53,7 @@ export default function OnlineGamePage() {
     [myPlayerNumber]
   );
   const { event: milestoneEvent, dismiss: dismissMilestone } = useGroupMilestones({
-    scores,
+    scores: serverScores,
     matchKey: id,
     watchPlayers,
     enabled: !!data,
@@ -208,6 +210,7 @@ export default function OnlineGamePage() {
             state={state}
             size={data.gridSize}
             history={placementHistory}
+            animationHistory={serverHistory}
             onCellClick={placeDot}
             disabled={!isMyTurn || data.status !== 'active'}
             phase={phase}

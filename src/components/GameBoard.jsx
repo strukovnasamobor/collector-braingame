@@ -42,7 +42,16 @@ function bfsConnectedOrder(state, size, player, sr, sc) {
   return order;
 }
 
-export default function GameBoard({ state, size, history, onCellClick, disabled, phase, lastPlaces }) {
+export default function GameBoard({
+  state,
+  size,
+  history,
+  animationHistory,
+  onCellClick,
+  disabled,
+  phase,
+  lastPlaces
+}) {
   const wrapperRef = useRef(null);
   const measureRef = useRef(() => { });
   const [pixelSize, setPixelSize] = useState(MAX_BOARD_MOBILE);
@@ -123,18 +132,28 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
   const lines2 = computeConnections(h2);
 
   // Detect a new placement and trigger a "wave" pulse across the connected group.
+  // In online mode the parent passes `animationHistory` (server-confirmed) so
+  // the wave fires only after the server validates the move — never on the
+  // optimistic update. Offline omits the prop and falls back to the live
+  // history. BFS always reads from the live `state`; by the time server
+  // history grows, the optimistic move is either the same dot (already there)
+  // or has been reconciled in.
+  const detectionHistory = animationHistory || history;
+  const detectH1 = normalizeHistory(detectionHistory?.[1] || []);
+  const detectH2 = normalizeHistory(detectionHistory?.[2] || []);
+
   useEffect(() => {
-    const counts = { 1: h1.length, 2: h2.length };
+    const counts = { 1: detectH1.length, 2: detectH2.length };
     const prev = prevCountsRef.current;
     let placedBy = null;
     let placedAt = null;
 
     if (counts[1] > prev[1]) {
       placedBy = 1;
-      placedAt = h1[h1.length - 1];
+      placedAt = detectH1[detectH1.length - 1];
     } else if (counts[2] > prev[2]) {
       placedBy = 2;
-      placedAt = h2[h2.length - 1];
+      placedAt = detectH2[detectH2.length - 1];
     }
 
     prevCountsRef.current = counts;
@@ -145,7 +164,7 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
       return;
     }
 
-    if (placedBy && Array.isArray(placedAt)) {
+    if (placedBy && Array.isArray(placedAt) && state && state.length) {
       const [pr, pc] = placedAt;
       if (state[pr]?.[pc]?.player === placedBy) {
         const order = bfsConnectedOrder(state, size, placedBy, pr, pc);
@@ -153,9 +172,9 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
         setPulse({ id: pulseIdRef.current, player: placedBy, order });
       }
     }
-    // history is the trigger; state is needed for BFS at the moment of placement.
+    // detectionHistory is the trigger; state is read live for BFS.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history]);
+  }, [detectionHistory]);
 
   const pulseDelay = (visitIndex) =>
     Math.min(visitIndex * PULSE_STEP_MS, PULSE_MAX_DELAY_MS);

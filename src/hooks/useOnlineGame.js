@@ -96,6 +96,16 @@ export function useOnlineGame(gameId) {
     };
   }, [state, data]);
 
+  // Server-confirmed scores: used for celebrations/animations so they only
+  // fire after the server validates the move, not on optimistic placement.
+  const serverScores = useMemo(() => {
+    if (!data || serverState.length === 0) return { 1: 0, 2: 0 };
+    return {
+      1: getBiggestGroup(serverState, data.gridSize, 1),
+      2: getBiggestGroup(serverState, data.gridSize, 2)
+    };
+  }, [serverState, data]);
+
   const phase = useMemo(() => {
     if (!data) return 'place';
     if (pendingMoves.length === 0) return data.phase;
@@ -326,7 +336,9 @@ export function useOnlineGame(gameId) {
     error,
     state,
     history,
+    serverHistory,
     scores,
+    serverScores,
     myPlayerNumber,
     ratings,
     placeDot,
