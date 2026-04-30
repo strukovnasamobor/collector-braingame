@@ -60,15 +60,39 @@ export function useOnlineGame(gameId) {
     return JSON.parse(data.gameStateJSON);
   }, [data]);
 
+  // Walk pending moves once, validating each against the running optimistic
+  // state, and stop at the first invalid one. Race condition this guards: the
+  // user clicks an empty cell, then a Firestore snapshot arrives showing the
+  // opponent already eliminated that cell. Without this check, applyPlace
+  // would happily set cell.player on top of cell.eliminated and the UI would
+  // briefly show a "ghost dot" on an eliminated cell while waiting for the
+  // server's 412 rejection.
+  const validPendingCount = useMemo(() => {
+    if (serverState.length === 0) return 0;
+    let s = serverState;
+    let count = 0;
+    for (const m of pendingMoves) {
+      const cell = s[m.row]?.[m.col];
+      if (!cell || cell.eliminated || cell.player !== null) break;
+      s = m.kind === 'place'
+        ? applyPlace(s, m.playerNumber, m.row, m.col)
+        : applyEliminate(s, m.row, m.col);
+      count++;
+    }
+    return count;
+  }, [serverState, pendingMoves]);
+
   const state = useMemo(() => {
     if (serverState.length === 0) return serverState;
     let s = serverState;
-    for (const m of pendingMoves) {
-      if (m.kind === 'place') s = applyPlace(s, m.playerNumber, m.row, m.col);
-      else s = applyEliminate(s, m.row, m.col);
+    for (let i = 0; i < validPendingCount; i++) {
+      const m = pendingMoves[i];
+      s = m.kind === 'place'
+        ? applyPlace(s, m.playerNumber, m.row, m.col)
+        : applyEliminate(s, m.row, m.col);
     }
     return s;
-  }, [serverState, pendingMoves]);
+  }, [serverState, pendingMoves, validPendingCount]);
 
   const serverHistory = useMemo(() => {
     if (!data || !data.placementHistory) return { 1: [], 2: [] };
@@ -80,13 +104,14 @@ export function useOnlineGame(gameId) {
 
   const history = useMemo(() => {
     const h = { 1: [...serverHistory[1]], 2: [...serverHistory[2]] };
-    for (const m of pendingMoves) {
+    for (let i = 0; i < validPendingCount; i++) {
+      const m = pendingMoves[i];
       if (m.kind === 'place') {
         h[m.playerNumber] = [...h[m.playerNumber], { row: m.row, col: m.col }];
       }
     }
     return h;
-  }, [serverHistory, pendingMoves]);
+  }, [serverHistory, pendingMoves, validPendingCount]);
 
   const scores = useMemo(() => {
     if (!data || state.length === 0) return { 1: 0, 2: 0 };
@@ -108,28 +133,29 @@ export function useOnlineGame(gameId) {
 
   const phase = useMemo(() => {
     if (!data) return 'place';
-    if (pendingMoves.length === 0) return data.phase;
-    const last = pendingMoves[pendingMoves.length - 1];
+    if (validPendingCount === 0) return data.phase;
+    const last = pendingMoves[validPendingCount - 1];
     return last.kind === 'place' ? 'eliminate' : 'place';
-  }, [data, pendingMoves]);
+  }, [data, pendingMoves, validPendingCount]);
 
   const currentPlayer = useMemo(() => {
     if (!data) return 1;
-    const hasOptimisticEliminate = pendingMoves.some((m) => m.kind === 'eliminate');
+    const validPending = pendingMoves.slice(0, validPendingCount);
+    const hasOptimisticEliminate = validPending.some((m) => m.kind === 'eliminate');
     if (hasOptimisticEliminate) {
-      const me = pendingMoves[0].playerNumber;
+      const me = validPending[0].playerNumber;
       return me === 1 ? 2 : 1;
     }
     return data.currentPlayer;
-  }, [data, pendingMoves]);
+  }, [data, pendingMoves, validPendingCount]);
 
   // Optimistic lastPlaces (the cell whose elimination must be adjacent to).
   const lastPlaces = useMemo(() => {
-    if (pendingMoves.length === 0) return data?.lastPlaces || null;
-    const last = pendingMoves[pendingMoves.length - 1];
+    if (validPendingCount === 0) return data?.lastPlaces || null;
+    const last = pendingMoves[validPendingCount - 1];
     if (last.kind === 'place') return { row: last.row, col: last.col };
     return null;
-  }, [data, pendingMoves]);
+  }, [data, pendingMoves, validPendingCount]);
 
   // Single per-turn timer: only resets when the active player flips, not on phase transition.
   const turnKey = data ? `${currentPlayer}` : '';
@@ -155,6 +181,17 @@ export function useOnlineGame(gameId) {
       return next.length === prev.length ? prev : next;
     });
   }, [data, pendingMoves.length]);
+
+  // If the latest server snapshot invalidated any pending optimistic move
+  // (e.g., opponent eliminated the cell we were trying to place on), drop
+  // those moves and surface an error. Without this, the queue would stay full
+  // (capped at 2) and block further clicks until the server's eventual 412.
+  useEffect(() => {
+    if (pendingMoves.length === 0) return;
+    if (validPendingCount === pendingMoves.length) return;
+    setPendingMoves((prev) => prev.slice(0, validPendingCount));
+    setLocalError('notifications.move_rejected');
+  }, [pendingMoves, validPendingCount]);
 
   useEffect(() => {
     if (!data || data.mode !== 'ranked' || ratingsFetchedRef.current) return;
