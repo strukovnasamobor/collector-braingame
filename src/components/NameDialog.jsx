@@ -68,7 +68,7 @@ export default function NameDialog({ open, onCancel, onStart }) {
         <IonItem>
           <IonLabel position="stacked">{t('game.grid_size_label')}</IonLabel>
           <IonSelect value={size} onIonChange={(e) => setSize(Number(e.detail.value))}>
-            {[4, 6, 8, 10, 12].map((n) => (
+            {[6, 8, 10, 12].map((n) => (
               <IonSelectOption key={n} value={n}>
                 {n}×{n}
               </IonSelectOption>

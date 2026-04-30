@@ -23,6 +23,7 @@ export function LocalGameProvider({ children }) {
   const [history, setHistory] = useState(emptyHistory());
   const [timeouts, setTimeouts] = useState({ 1: 0, 2: 0 });
   const [turnKey, setTurnKey] = useState(0);
+  const [matchId, setMatchId] = useState(0);
   const [result, setResult] = useState(null); // { winner, score1, score2, message }
 
   const startGame = useCallback(
@@ -35,6 +36,7 @@ export function LocalGameProvider({ children }) {
       setHistory(emptyHistory());
       setTimeouts({ 1: 0, 2: 0 });
       setTurnKey((k) => k + 1);
+      setMatchId((m) => m + 1);
       setResult(null);
     },
     []
@@ -49,6 +51,7 @@ export function LocalGameProvider({ children }) {
     setHistory(emptyHistory());
     setTimeouts({ 1: 0, 2: 0 });
     setTurnKey((k) => k + 1);
+    setMatchId((m) => m + 1);
     setResult(null);
   }, [config]);
 
@@ -159,6 +162,7 @@ export function LocalGameProvider({ children }) {
     scores,
     result,
     turnKey,
+    matchId,
     placeDot,
     startGame,
     resetGame,

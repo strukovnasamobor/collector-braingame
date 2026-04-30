@@ -8,11 +8,13 @@ import {
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
+import MilestoneCelebration from '../components/MilestoneCelebration';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useOnlineGame } from '../hooks/useOnlineGame';
 import { useGameTimer } from '../hooks/useGameTimer';
 import { useGameExit } from '../contexts/GameExitContext';
+import { useGroupMilestones } from '../hooks/useGroupMilestones';
 import { formatDelta } from '../game/gameEngine';
 import { notifyGameJoin } from '../services/firebaseActions';
 
@@ -34,6 +36,7 @@ export default function OnlineGamePage() {
     leaveGame,
     turnKey,
     phase,
+    lastPlaces,
     currentPlayer,
     localError,
     finalResult
@@ -42,6 +45,18 @@ export default function OnlineGamePage() {
   const [alertError, setAlertError] = useState('');
   const [opponentLeftOpen, setOpponentLeftOpen] = useState(false);
   const { registerExit, clearExit } = useGameExit();
+
+  const watchPlayers = useMemo(
+    () => (myPlayerNumber ? [myPlayerNumber] : []),
+    [myPlayerNumber]
+  );
+  const { event: milestoneEvent, dismiss: dismissMilestone } = useGroupMilestones({
+    scores,
+    matchKey: id,
+    watchPlayers,
+    enabled: !!data,
+    gridSize: data?.gridSize
+  });
 
   useEffect(() => {
     if (exists === false) history.replace('/online/lobby');
@@ -195,6 +210,8 @@ export default function OnlineGamePage() {
             history={placementHistory}
             onCellClick={placeDot}
             disabled={!isMyTurn || data.status !== 'active'}
+            phase={phase}
+            lastPlaces={lastPlaces}
           />
 
           {data.timerEnabled && data.status === 'active' && (
@@ -207,6 +224,8 @@ export default function OnlineGamePage() {
             {data.status === 'active' ? statusText : ''}
           </div>
         </div>
+
+        <MilestoneCelebration event={milestoneEvent} onDone={dismissMilestone} />
 
         <IonAlert
           isOpen={!!alertError && !opponentLeftOpen}

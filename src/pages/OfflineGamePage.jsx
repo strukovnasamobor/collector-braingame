@@ -20,15 +20,18 @@ export default function OfflineGamePage() {
     state,
     currentPlayer,
     phase,
+    lastPlaces,
     history: placementHistory,
     scores,
     result,
     turnKey,
     placeDot,
     clearGame,
+    resetGame,
     onTimeout,
     isActive
   } = useLocalGame();
+
   const { registerExit, clearExit } = useGameExit();
 
   useEffect(() => {
@@ -106,6 +109,8 @@ export default function OfflineGamePage() {
             history={placementHistory}
             onCellClick={placeDot}
             disabled={!isActive}
+            phase={phase}
+            lastPlaces={lastPlaces}
           />
 
           {config.timerEnabled && isActive && (
@@ -127,8 +132,7 @@ export default function OfflineGamePage() {
             {
               text: t('game.new_game_button'),
               handler: () => {
-                clearGame();
-                history.replace('/offline');
+                resetGame();
               }
             },
             {

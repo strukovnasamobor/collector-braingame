@@ -334,6 +334,7 @@ export function useOnlineGame(gameId) {
     leaveGame,
     turnKey,
     phase,
+    lastPlaces,
     currentPlayer,
     localError,
     finalResult

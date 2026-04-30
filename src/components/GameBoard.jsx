@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { computeConnections } from '../game/gameEngine';
+import { computeConnections, hasAdjacentFree } from '../game/gameEngine';
 import { normalizeHistory } from '../utils/coordinateNormalization';
 
 const P1_COLOR = '#dc3545';
@@ -10,7 +10,7 @@ const MAX_BOARD_MOBILE = 430;
 const MAX_BOARD_DESKTOP = 760;
 const DESKTOP_BREAKPOINT = 900;
 
-export default function GameBoard({ state, size, history, onCellClick, disabled }) {
+export default function GameBoard({ state, size, history, onCellClick, disabled, phase, lastPlaces }) {
   const wrapperRef = useRef(null);
   const measureRef = useRef(() => { });
   const [pixelSize, setPixelSize] = useState(MAX_BOARD_MOBILE);
@@ -100,7 +100,21 @@ export default function GameBoard({ state, size, history, onCellClick, disabled 
             // Eliminated and already-occupied cells are never valid targets in either phase,
             // so swallow the click here. Prevents the optimistic-flash + rollback flicker
             // that would otherwise happen when the server rejects the bad move with 412.
-            const blocked = disabled || cell.eliminated || cell.player !== null;
+            const occupiedOrGone = cell.eliminated || cell.player !== null;
+            let nonNeighborInEliminate = false;
+            let unplaceableInPlace = false;
+            if (!disabled && !occupiedOrGone) {
+              if (phase === 'eliminate' && lastPlaces) {
+                const dr = Math.abs(i - lastPlaces.row);
+                const dc = Math.abs(j - lastPlaces.col);
+                const isSelf = dr === 0 && dc === 0;
+                const isNeighbor = !isSelf && dr <= 1 && dc <= 1;
+                nonNeighborInEliminate = !isNeighbor;
+              } else if (phase === 'place') {
+                unplaceableInPlace = !hasAdjacentFree(state, size, i, j);
+              }
+            }
+            const blocked = disabled || occupiedOrGone || nonNeighborInEliminate || unplaceableInPlace;
             return (
               <div
                 key={`${i}-${j}`}

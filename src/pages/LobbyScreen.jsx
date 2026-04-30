@@ -145,7 +145,7 @@ export default function LobbyScreen() {
                   value={gridSize}
                   onIonChange={(e) => setGridSize(Number(e.detail.value))}
                 >
-                  {[4, 6, 8, 10, 12].map((n) => (
+                  {[6, 8, 10, 12].map((n) => (
                     <IonSelectOption key={n} value={n}>
                       {n}×{n}
                     </IonSelectOption>
