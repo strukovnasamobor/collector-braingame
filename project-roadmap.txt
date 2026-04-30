@@ -5,4 +5,5 @@ Ver. 1.0 (1)
 - deploy and make TWA with PWA Web Builder
 - Github add tag and upload apk and zipped dist folder
 - Google Play Store new edition
+- firestore reset
 - check readme file link to google play store

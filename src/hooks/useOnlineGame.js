@@ -249,6 +249,12 @@ export function useOnlineGame(gameId) {
       if (pendingMoves.length >= 2) return;
 
       const size = data.gridSize;
+      // Hard guard: eliminated or occupied cells are never valid in either phase. Reject
+      // before the optimistic queue forms so a stale snapshot never lets a dot flash on
+      // an eliminated cell, then rollback when the server returns 412.
+      const targetCell = state[row]?.[col];
+      if (!targetCell || targetCell.eliminated || targetCell.player !== null) return;
+
       const isPlacePhase = phase === 'place';
 
       const valid = isPlacePhase

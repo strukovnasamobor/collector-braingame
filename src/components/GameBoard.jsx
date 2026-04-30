@@ -96,25 +96,35 @@ export default function GameBoard({ state, size, history, onCellClick, disabled 
         }}
       >
         {state.map((row, i) =>
-          row.map((cell, j) => (
-            <div
-              key={`${i}-${j}`}
-              className={`sk-cell${cell.eliminated ? ' eliminated' : ''}`}
-              style={{ width: cellPx, height: cellPx }}
-              onClick={() => !disabled && onCellClick(i, j)}
-            >
-              {cell.player && (
-                <div
-                  className="sk-dot"
-                  style={{
-                    backgroundColor: cell.player === 1 ? P1_COLOR : P2_COLOR,
-                    width: dotPx,
-                    height: dotPx
-                  }}
-                />
-              )}
-            </div>
-          ))
+          row.map((cell, j) => {
+            // Eliminated and already-occupied cells are never valid targets in either phase,
+            // so swallow the click here. Prevents the optimistic-flash + rollback flicker
+            // that would otherwise happen when the server rejects the bad move with 412.
+            const blocked = disabled || cell.eliminated || cell.player !== null;
+            return (
+              <div
+                key={`${i}-${j}`}
+                className={`sk-cell${cell.eliminated ? ' eliminated' : ''}${blocked ? ' blocked' : ''}`}
+                style={{
+                  width: cellPx,
+                  height: cellPx,
+                  cursor: blocked ? 'not-allowed' : 'pointer'
+                }}
+                onClick={() => !blocked && onCellClick(i, j)}
+              >
+                {cell.player && (
+                  <div
+                    className="sk-dot"
+                    style={{
+                      backgroundColor: cell.player === 1 ? P1_COLOR : P2_COLOR,
+                      width: dotPx,
+                      height: dotPx
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })
         )}
 
         <svg
