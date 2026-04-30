@@ -7,3 +7,13 @@ FIREBASE_PROJECT_ID = "collector-braingame"
 
 [triggers]
 crons = ["* * * * *"]
+
+# Per-user, per-endpoint sliding-window limit. Key is `${uid}:${pathname}`, so each endpoint
+# has its own budget for each authenticated caller. 120 / 60s = 2 req/s sustained; legitimate
+# play (heartbeats every 10s, moves a few times per minute, matchmaking polls every 3s) stays
+# well under this, while a spammer is throttled before they amplify Firestore costs.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }

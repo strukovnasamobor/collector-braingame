@@ -14,6 +14,7 @@ import AppHeader from '../components/AppHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { joinCasualRoom } from '../services/firebaseActions';
+import { sanitizeRoomCode, ROOM_CODE_LEN } from '../utils/sanitize';
 
 export default function JoinRoomForm() {
   const { t } = useI18n();
@@ -24,8 +25,8 @@ export default function JoinRoomForm() {
   const [joining, setJoining] = useState(false);
 
   const handleJoin = async () => {
-    const clean = code.toUpperCase().trim();
-    if (!clean) {
+    const clean = sanitizeRoomCode(code);
+    if (clean.length !== ROOM_CODE_LEN) {
       setError(t('notifications.enter_code'));
       return;
     }
@@ -60,8 +61,8 @@ export default function JoinRoomForm() {
               <IonInput
                 value={code}
                 placeholder={t('lobby.room_code_input_placeholder')}
-                maxlength={6}
-                onIonInput={(e) => setCode((e.detail.value || '').toUpperCase())}
+                maxlength={ROOM_CODE_LEN}
+                onIonInput={(e) => setCode(sanitizeRoomCode(e.detail.value || ''))}
               />
             </IonItem>
             {error && (

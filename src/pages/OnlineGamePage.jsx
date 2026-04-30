@@ -58,7 +58,7 @@ export default function OnlineGamePage() {
       try {
         await notifyGameJoin({ gameId: id });
       } catch (error) {
-        console.error('Failed to notify game join:', error);
+        console.error('Failed to notify game join:', error?.code || error?.message || 'unknown');
       }
     };
     notifyJoin();
@@ -95,9 +95,13 @@ export default function OnlineGamePage() {
     onTimeout
   });
 
-  const handleQuit = useCallback(async () => {
-    await leaveGame();
+  const handleQuit = useCallback(() => {
+    // Navigate first so the page unmounts before the Firestore snapshot of the
+    // finished/left game can trigger the Game Over alert. The leave request
+    // continues in the background; failures don't matter — the cron sweep is the
+    // ultimate backstop.
     history.replace('/online/lobby');
+    leaveGame().catch(() => {});
   }, [leaveGame, history]);
 
   useEffect(() => {

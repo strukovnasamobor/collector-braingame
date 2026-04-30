@@ -234,7 +234,7 @@ export function useOnlineGame(gameId) {
         }
         setFinalResult(result);
       } catch (e) {
-        console.error('Rating update error:', e);
+        console.error('Rating update error:', e?.code || e?.message || 'unknown');
         setFinalResult(data.result);
       }
     })();
@@ -310,7 +310,7 @@ export function useOnlineGame(gameId) {
     try {
       await leaveOnlineGame({ gameId });
     } catch (e) {
-      console.warn('Leave game failed:', e);
+      console.warn('Leave game failed:', e?.code || e?.message || 'unknown');
     }
   }, [data, user, gameId]);
 

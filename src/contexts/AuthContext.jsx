@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
         try {
           await fbSignOut(auth);
         } catch (e) {
-          console.warn('Blocked account sign-out failed:', e);
+          console.warn('Blocked account sign-out failed:', e?.code || e?.message || 'unknown');
         }
         return;
       }
@@ -65,7 +65,7 @@ export function AuthProvider({ children }) {
         try {
           await ensurePlayerProfile();
         } catch (e) {
-          console.warn('Profile init failed:', e);
+          console.warn('Profile init failed:', e?.code || e?.message || 'unknown');
         }
       }
       try {

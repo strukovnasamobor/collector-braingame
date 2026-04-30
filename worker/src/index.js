@@ -3,6 +3,19 @@ import { importX509, jwtVerify } from 'jose';
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FIRESTORE_SCOPE = 'https://www.googleapis.com/auth/datastore';
+
+// Hostnames whose cross-origin requests should receive CORS headers. The default fetch handler
+// reflects the request Origin only when its hostname is in this set; everything else gets no
+// Access-Control-Allow-Origin and is blocked by the browser. Bearer-token auth means a stolen
+// token still works regardless of origin, but tightening this is cheap defense-in-depth.
+const ALLOWED_ORIGIN_HOSTS = new Set([
+  'collector-braingame.web.app',
+  'collector-braingame.firebaseapp.com',
+  'localhost',
+  '127.0.0.1'
+]);
+// Inner handlers attach a wildcard placeholder; the outer fetch handler rewrites it based on
+// the request's Origin. This keeps every handler's response shape uniform.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
@@ -17,6 +30,8 @@ const DISPLAY_SCALE = 1000 / Math.LN2;
 const DISPLAY_DIVISOR = 2485;
 const MIN_SIGMA = 1;
 const EPSILON = 1e-12;
+const MAX_MU = 5000;
+const MAX_DISPLAY_RATING = 9999;
 const MATCHMAKING_STALE_MS_BY_MODE = {
   ranked: 25 * 1000,
   casual: 30 * 1000
@@ -25,7 +40,11 @@ const MATCHMAKING_STALE_MS = 30 * 1000;
 const STALE_GAME_THRESHOLD_MS = 60 * 1000;
 const STALE_CASUAL_GAME_THRESHOLD_MS = 5 * 60 * 1000;
 const TURN_DURATION_MS = 30 * 1000;
-const TURN_DEADLINE_GRACE_MS = 5 * 1000;
+// Clients submit moves via the worker, which adds RTT. 2s covers normal jitter while keeping
+// the post-deadline abuse window small (was 5s, which let fast clients steal a free turn).
+const TURN_DEADLINE_GRACE_MS = 2 * 1000;
+const QUEUE_QUERY_LIMIT = 200;
+const ACTIVE_GAME_QUERY_LIMIT = 5;
 
 const MATCHMAKING_POOL_DIVISOR = 10;
 const MATCHMAKING_POOL_MAX = 1000;
@@ -34,7 +53,27 @@ const ALLOWED_GRID_SIZES = new Set([4, 6, 8, 10, 12]);
 const RANKED_GRID_SIZE = 8;
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const GAME_ID_PATTERN = /^[A-Za-z0-9_]{1,40}$/;
-const MAX_DISPLAY_NAME_LENGTH = 64;
+const MAX_DISPLAY_NAME_LENGTH = 32;
+// Strip codepoints that let names spoof or mislead other players: bidi controls (RTL/LTR
+// override), zero-width joiners, format chars, variation selectors, soft hyphen, BOM.
+// React still escapes HTML, so XSS is not the concern; visual deception is.
+const DANGEROUS_NAME_CHARS = new RegExp(
+  '[' +
+    '\\u00AD' +              // soft hyphen
+    '\\u061C' +              // Arabic letter mark
+    '\\u180E' +              // Mongolian vowel separator
+    '\\u200B-\\u200F' +      // zero-width spaces, joiners, LRM, RLM
+    '\\u202A-\\u202E' +      // bidi embed/override (incl. RTL override U+202E)
+    '\\u2060-\\u2064' +      // word joiner, invisible operators
+    '\\u2066-\\u206F' +      // bidi isolates, deprecated format chars
+    '\\uFE00-\\uFE0F' +      // variation selectors
+    '\\uFEFF' +              // BOM / zero-width no-break space
+    ']' +
+    '|[\\u{E0000}-\\u{E007F}]',  // tag characters (extra range needs its own class)
+  'gu'
+);
+// C0/C1 control characters: never belong in a display name.
+const CONTROL_CHARS = /[\x00-\x1F\x7F-\x9F]/g;
 
 class HttpError extends Error {
   constructor(message, status = 400) {
@@ -46,7 +85,16 @@ class HttpError extends Error {
 
 function clampDisplayName(name) {
   if (typeof name !== 'string') return '';
-  return name.slice(0, MAX_DISPLAY_NAME_LENGTH);
+  // NFKC folds compatibility forms (full-width Latin, ligatures) so 'Ｐlayer' and 'Player'
+  // collapse to the same canonical name. Then strip bidi/zero-width/control characters that
+  // enable visual spoofing, collapse runs of whitespace, and trim.
+  const cleaned = name
+    .normalize('NFKC')
+    .replace(DANGEROUS_NAME_CHARS, '')
+    .replace(CONTROL_CHARS, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.slice(0, MAX_DISPLAY_NAME_LENGTH);
 }
 
 function parseGridSize(raw, { fallback = 6 } = {}) {
@@ -300,27 +348,35 @@ function conservativeSkillFromDisplayRating(displayRating) {
 function displayRatingFromConservativeSkill(conservativeSkill) {
   const value = Number(conservativeSkill);
   if (!Number.isFinite(value)) return DEFAULT_DISPLAY_RATING;
-  return Math.max(0, DISPLAY_SCALE * softplus(value / DISPLAY_DIVISOR));
+  const raw = DISPLAY_SCALE * softplus(value / DISPLAY_DIVISOR);
+  if (!Number.isFinite(raw)) return DEFAULT_DISPLAY_RATING;
+  return Math.min(MAX_DISPLAY_RATING, Math.max(0, raw));
 }
 
 function normalizeSkillProfile(profile = {}) {
   const mu = Number(profile.mu);
   const sigma = Number(profile.sigma);
+  // Defensive clamps: a corrupted player doc (e.g. NaN/Infinity sneaking in via a future
+  // direct-write path) must not propagate into softplus or the matchmaking rating compare.
   if (Number.isFinite(mu) && Number.isFinite(sigma)) {
-    const clampedSigma = Math.max(MIN_SIGMA, sigma);
+    const clampedMu = Math.min(MAX_MU, Math.max(0, mu));
+    const clampedSigma = Math.min(DEFAULT_SIGMA, Math.max(MIN_SIGMA, sigma));
     return {
-      mu,
+      mu: clampedMu,
       sigma: clampedSigma,
-      rating: Math.round(displayRatingFromConservativeSkill(mu - 3 * clampedSigma))
+      rating: Math.round(displayRatingFromConservativeSkill(clampedMu - 3 * clampedSigma))
     };
   }
 
   const legacyRating = Number(profile.rating);
   if (Number.isFinite(legacyRating)) {
-    const clampedRating = Math.max(0, legacyRating);
+    const clampedRating = Math.min(MAX_DISPLAY_RATING, Math.max(0, legacyRating));
     const conservativeSkill = conservativeSkillFromDisplayRating(clampedRating);
+    const seedMu = Number.isFinite(conservativeSkill)
+      ? Math.min(MAX_MU, Math.max(0, conservativeSkill + 3 * DEFAULT_SIGMA))
+      : DEFAULT_MU;
     return {
-      mu: conservativeSkill + 3 * DEFAULT_SIGMA,
+      mu: seedMu,
       sigma: DEFAULT_SIGMA,
       rating: Math.round(clampedRating)
     };
@@ -360,8 +416,10 @@ function computeSkillDelta(profileA, profileB, scoreA) {
   const gamma = 1 / c;
   const v = (pdf * (t + pdf / p)) / p;
 
-  const winnerMu = winner.mu + (winnerSigmaSq / c) * (pdf / p);
-  const loserMu = loser.mu - (loserSigmaSq / c) * (pdf / p);
+  const rawWinnerMu = winner.mu + (winnerSigmaSq / c) * (pdf / p);
+  const rawLoserMu = loser.mu - (loserSigmaSq / c) * (pdf / p);
+  const winnerMu = Number.isFinite(rawWinnerMu) ? Math.min(MAX_MU, Math.max(0, rawWinnerMu)) : winner.mu;
+  const loserMu = Number.isFinite(rawLoserMu) ? Math.min(MAX_MU, Math.max(0, rawLoserMu)) : loser.mu;
   const winnerSigma = Math.sqrt(Math.max(winnerSigmaSq * (1 - winnerSigmaSq * gamma * gamma * v), MIN_SIGMA ** 2));
   const loserSigma = Math.sqrt(Math.max(loserSigmaSq * (1 - loserSigmaSq * gamma * gamma * v), MIN_SIGMA ** 2));
 
@@ -586,11 +644,28 @@ async function getDocument(env, collectionName, id) {
   };
 }
 
-async function writeDocument(env, collectionName, id, data, updateTime) {
-  const query = updateTime ? `?currentDocument.updateTime=${encodeURIComponent(updateTime)}` : '';
-  const response = await firestoreFetch(env, `${docPath(collectionName, id)}${query}`, {
+async function writeDocument(env, collectionName, id, data, updateTime, options = {}) {
+  // updateMask: when supplied, only the listed top-level fields are replaced and the rest of
+  // the doc is untouched. Used for hot-path partial writes (heartbeats) so they don't compete
+  // with whole-doc writes (moves, leaves) for the precondition slot.
+  const params = new URLSearchParams();
+  if (updateTime) params.set('currentDocument.updateTime', updateTime);
+  const updateMask = Array.isArray(options.updateMask) ? options.updateMask : null;
+  if (updateMask) {
+    for (const path of updateMask) params.append('updateMask.fieldPaths', path);
+  }
+  const queryString = params.toString();
+  const url = queryString ? `${docPath(collectionName, id)}?${queryString}` : docPath(collectionName, id);
+
+  const fields = updateMask
+    ? Object.fromEntries(updateMask
+        .filter((k) => data[k] !== undefined)
+        .map((k) => [k, firestoreValue(data[k])]))
+    : firestoreFieldsFromObject(data);
+
+  const response = await firestoreFetch(env, url, {
     method: 'PATCH',
-    body: JSON.stringify({ fields: firestoreFieldsFromObject(data) })
+    body: JSON.stringify({ fields })
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -631,20 +706,29 @@ async function mergePlayerWithRetry(env, uid, mutate, { maxAttempts = 4 } = {}) 
 }
 
 async function ensurePlayerDoc(env, authUser, { refreshDisplayName = false } = {}) {
-  const written = await mergePlayerWithRetry(env, authUser.uid, (current) => ({
-    displayName: clampDisplayName(refreshDisplayName
+  const written = await mergePlayerWithRetry(env, authUser.uid, (current) => {
+    const seedName = clampDisplayName(refreshDisplayName
       ? (authUser.name || current.displayName || 'Player')
-      : (current.displayName || authUser.name || 'Player')),
-    mu: Number.isFinite(Number(current.mu)) ? Number(current.mu) : DEFAULT_MU,
-    sigma: Number.isFinite(Number(current.sigma)) ? Math.max(MIN_SIGMA, Number(current.sigma)) : DEFAULT_SIGMA,
-    rating: Number.isFinite(Number(current.rating)) ? Number(current.rating) : DEFAULT_DISPLAY_RATING,
-    games: Number(current.games || 0),
-    wins: Number(current.wins || 0),
-    losses: Number(current.losses || 0),
-    draws: Number(current.draws || 0),
-    state: current.state || 'idle',
-    updatedAt: new Date().toISOString()
-  }));
+      : (current.displayName || authUser.name || 'Player'));
+    return {
+      displayName: seedName || 'Player',
+      mu: Number.isFinite(Number(current.mu))
+        ? Math.min(MAX_MU, Math.max(0, Number(current.mu)))
+        : DEFAULT_MU,
+      sigma: Number.isFinite(Number(current.sigma))
+        ? Math.min(DEFAULT_SIGMA, Math.max(MIN_SIGMA, Number(current.sigma)))
+        : DEFAULT_SIGMA,
+      rating: Number.isFinite(Number(current.rating))
+        ? Math.min(MAX_DISPLAY_RATING, Math.max(0, Number(current.rating)))
+        : DEFAULT_DISPLAY_RATING,
+      games: Number(current.games || 0),
+      wins: Number(current.wins || 0),
+      losses: Number(current.losses || 0),
+      draws: Number(current.draws || 0),
+      state: current.state || 'idle',
+      updatedAt: new Date().toISOString()
+    };
+  });
   return written.data;
 }
 
@@ -734,7 +818,8 @@ async function queryQueueDocs(env, mode, extraFilters = {}) {
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId }],
-        where: { compositeFilter: { op: 'AND', filters } }
+        where: { compositeFilter: { op: 'AND', filters } },
+        limit: QUEUE_QUERY_LIMIT
       }
     })
   });
@@ -750,30 +835,44 @@ async function queryQueueDocs(env, mode, extraFilters = {}) {
     }));
 }
 
-async function findActiveGameForUser(env, uid) {
+async function queryGamesByUidField(env, fieldPath, uid) {
+  // Single-field equality query. Firestore auto-creates the per-field index, so no entry
+  // in firestore.indexes.json is required. Returns games where the user is in that slot,
+  // not necessarily active — caller filters status to avoid the (uid, status) composite index.
   const response = await firestoreFetch(env, ':runQuery', {
     method: 'POST',
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId: 'games' }],
         where: {
-          fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'active' } }
-        }
+          fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: { stringValue: uid } }
+        },
+        limit: ACTIVE_GAME_QUERY_LIMIT
       }
     })
   });
-  if (!response.ok) return null;
+  if (!response.ok) return [];
   const rows = await response.json();
-  for (const row of rows) {
-    if (!row.document) continue;
-    const data = firestoreObjectFromFields(row.document.fields || {});
-    if (data.player1uid === uid || data.player2uid === uid) {
-      return {
-        id: row.document.name?.split('/').pop(),
-        updateTime: row.document.updateTime,
-        data
-      };
-    }
+  return rows
+    .map((row) => row.document)
+    .filter(Boolean)
+    .map((doc) => ({
+      id: doc.name?.split('/').pop(),
+      updateTime: doc.updateTime,
+      data: firestoreObjectFromFields(doc.fields || {})
+    }));
+}
+
+async function findActiveGameForUser(env, uid) {
+  // Two narrow queries (player1uid, player2uid) instead of a full collection scan over every
+  // active game. Each is bounded by ACTIVE_GAME_QUERY_LIMIT and uses Firestore's auto-created
+  // single-field index, so the cost stays O(1) regardless of total active game count.
+  const [asP1, asP2] = await Promise.all([
+    queryGamesByUidField(env, 'player1uid', uid),
+    queryGamesByUidField(env, 'player2uid', uid)
+  ]);
+  for (const game of [...asP1, ...asP2]) {
+    if (game.data?.status === 'active') return game;
   }
   return null;
 }
@@ -957,12 +1056,11 @@ async function handleMatchmakingAction(env, authUser, body) {
     const liveCandidates = [];
     for (const entry of others) {
       if (!isFreshQueueEntry(entry)) {
-        await writeDocument(env, queueCollection, entry.id, {
-          ...entry.data,
-          status: 'stale',
-          updatedAtMs: now,
-          updatedAt: new Date().toISOString()
-        });
+        // Stale entries are deleted (not relabeled) so the queue collection doesn't grow
+        // unbounded under abuse. Best-effort: another writer may have already removed it.
+        try {
+          await deleteDocument(env, queueCollection, entry.id);
+        } catch (_) {}
         continue;
       }
       if (entry.data?.status !== 'searching' || entry.data?.matchedWith || entry.data?.gameId) {
@@ -1529,14 +1627,21 @@ async function handleGameAction(env, authUser, body) {
       return errorResponse('Only participants can heartbeat.', 403);
     }
     const playerNumber = current.player1uid === authUser.uid ? 1 : 2;
+    const fieldPath = `lastSeenP${playerNumber}Ms`;
     try {
-      await writeDocument(env, 'games', gameId, {
-        ...current,
-        [`lastSeenP${playerNumber}Ms`]: Date.now()
-      }, game.updateTime);
+      // Field-mask write: only lastSeenP{n}Ms is touched, no precondition. Concurrent moves
+      // and leaves are unaffected by heartbeat traffic, eliminating the move-retry storm
+      // a heartbeat-spammer could otherwise force on the opponent.
+      await writeDocument(
+        env,
+        'games',
+        gameId,
+        { [fieldPath]: Date.now() },
+        null,
+        { updateMask: [fieldPath] }
+      );
     } catch (_) {
-      // Concurrent write (a real move, leave, or the other player's heartbeat) won the race.
-      // The next heartbeat tick will retry; not worth surfacing the error.
+      // Best-effort. The cron sweep is the ultimate backstop.
     }
     return corsResponse({ ok: true });
   }
@@ -1620,6 +1725,30 @@ async function handleRankedFinalize(env, authUser, body) {
   return corsResponse({ ok: true, result });
 }
 
+function pickAllowedOrigin(origin) {
+  if (!origin) return null;
+  try {
+    const u = new URL(origin);
+    return ALLOWED_ORIGIN_HOSTS.has(u.hostname) ? origin : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Optional Cloudflare Rate Limiting binding. If unbound (e.g., local dev or older deploys),
+// the call is a no-op and returns true. Keys are uid:pathname so each endpoint has its own
+// budget per user; legitimate play stays well under the limit.
+async function checkRateLimit(env, key) {
+  const limiter = env?.RATE_LIMITER;
+  if (!limiter || typeof limiter.limit !== 'function') return true;
+  try {
+    const { success } = await limiter.limit({ key });
+    return !!success;
+  } catch (_) {
+    return true;
+  }
+}
+
 async function handleRequest(request, env) {
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (request.method !== 'POST') return errorResponse('Method not allowed.', 405);
@@ -1627,6 +1756,10 @@ async function handleRequest(request, env) {
   const url = new URL(request.url);
   const authUser = await verifyFirebaseIdToken(request, env);
   const body = await getRequestJson(request);
+
+  if (!(await checkRateLimit(env, `${authUser.uid}:${url.pathname}`))) {
+    return errorResponse('Too many requests. Please slow down.', 429);
+  }
 
   if (url.pathname === '/profile/ensure') {
     return handleProfileEnsure(env, authUser);
@@ -1680,7 +1813,8 @@ async function sweepStaleGames(env) {
           from: [{ collectionId: 'games' }],
           where: {
             fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'active' } }
-          }
+          },
+          limit: 500
         }
       })
     });
@@ -1749,17 +1883,37 @@ async function sweepStaleGames(env) {
   }
 }
 
+// Wrap a Response to apply the validated CORS origin. Inner handlers always emit
+// `Access-Control-Allow-Origin: *`; here we replace it with the reflected request Origin
+// (when allowlisted) or strip it entirely. Bearer-token auth means a leaked token still
+// works regardless of origin, but tightening this is cheap defense-in-depth.
+function applyCorsOrigin(response, allowOrigin) {
+  const headers = new Headers(response.headers);
+  if (allowOrigin) {
+    headers.set('Access-Control-Allow-Origin', allowOrigin);
+    const existingVary = headers.get('Vary');
+    headers.set('Vary', existingVary ? `${existingVary}, Origin` : 'Origin');
+  } else {
+    headers.delete('Access-Control-Allow-Origin');
+  }
+  return new Response(response.body, { status: response.status, headers });
+}
+
 export default {
   async fetch(request, env) {
+    const allowOrigin = pickAllowedOrigin(request.headers.get('Origin'));
+    let response;
     try {
-      return await handleRequest(request, env);
+      response = await handleRequest(request, env);
     } catch (error) {
       if (error instanceof HttpError) {
-        return errorResponse(error.message, error.status);
+        response = errorResponse(error.message, error.status);
+      } else {
+        console.error('worker: unhandled error', error);
+        response = errorResponse('Internal server error.', 500);
       }
-      console.error('worker: unhandled error', error);
-      return errorResponse('Internal server error.', 500);
     }
+    return applyCorsOrigin(response, allowOrigin);
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(sweepStaleGames(env));

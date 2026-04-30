@@ -20,6 +20,7 @@ import {
     heartbeatMatchmaking
 } from '../hooks/matchmakingService';
 import { validateGame } from '../hooks/matchmakingService';
+import { clampGridSize } from '../utils/sanitize';
 
 function useQuery() {
     return new URLSearchParams(useLocation().search);
@@ -39,7 +40,7 @@ export default function MatchmakingQueuePage() {
         [mode]
     );
 
-    const casualGridSize = Number(query.get('gridSize')) || 6;
+    const casualGridSize = clampGridSize(query.get('gridSize'));
     const casualTimerEnabled = query.get('timer') === '1';
 
     useEffect(() => {

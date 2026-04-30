@@ -17,6 +17,7 @@ import {
 } from '@ionic/react';
 import { closeOutline, playOutline } from 'ionicons/icons';
 import { useI18n } from '../contexts/I18nContext';
+import { sanitizeDisplayName, DISPLAY_NAME_MAX } from '../utils/sanitize';
 
 export default function NameDialog({ open, onCancel, onStart }) {
   const { t } = useI18n();
@@ -27,8 +28,8 @@ export default function NameDialog({ open, onCancel, onStart }) {
   const [error, setError] = useState('');
 
   const handleStart = () => {
-    const p1t = p1.trim() || 'Player 1';
-    const p2t = p2.trim() || 'Player 2';
+    const p1t = sanitizeDisplayName(p1) || 'Player 1';
+    const p2t = sanitizeDisplayName(p2) || 'Player 2';
     setError('');
     onStart({ player1Name: p1t, player2Name: p2t, gridSize: size, timerEnabled: timer });
   };
@@ -51,6 +52,7 @@ export default function NameDialog({ open, onCancel, onStart }) {
           <IonInput
             value={p1}
             placeholder={t('game.player1_placeholder')}
+            maxlength={DISPLAY_NAME_MAX}
             onIonInput={(e) => setP1(e.detail.value || '')}
           />
         </IonItem>
@@ -59,6 +61,7 @@ export default function NameDialog({ open, onCancel, onStart }) {
           <IonInput
             value={p2}
             placeholder={t('game.player2_placeholder')}
+            maxlength={DISPLAY_NAME_MAX}
             onIonInput={(e) => setP2(e.detail.value || '')}
           />
         </IonItem>

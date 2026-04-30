@@ -10,6 +10,8 @@ const DISPLAY_SCALE = 1000 / Math.LN2;
 const DISPLAY_DIVISOR = 2485;
 const MIN_SIGMA = 1;
 const EPSILON = 1e-12;
+const MAX_MU = 5000;
+const MAX_DISPLAY_RATING = 9999;
 
 function erf(x) {
     const sign = Math.sign(x) || 1;
@@ -50,7 +52,9 @@ export function conservativeSkillFromDisplayRating(displayRating) {
 export function displayRatingFromConservativeSkill(conservativeSkill) {
     const value = Number(conservativeSkill);
     if (!Number.isFinite(value)) return DEFAULT_DISPLAY_RATING;
-    return Math.max(0, DISPLAY_SCALE * softplus(value / DISPLAY_DIVISOR));
+    const raw = DISPLAY_SCALE * softplus(value / DISPLAY_DIVISOR);
+    if (!Number.isFinite(raw)) return DEFAULT_DISPLAY_RATING;
+    return Math.min(MAX_DISPLAY_RATING, Math.max(0, raw));
 }
 
 export function getConservativeSkillEstimate(mu, sigma) {
@@ -82,21 +86,27 @@ export function getDisplayRatingFromProfile(profile = {}) {
 export function normalizeSkillProfile(profile = {}) {
     const mu = Number(profile.mu);
     const sigma = Number(profile.sigma);
+    // Defensive clamps: a corrupted player doc must not feed NaN/Infinity into softplus or
+    // the matchmaking rating compare. mu/sigma should never escape these bounds in practice.
     if (Number.isFinite(mu) && Number.isFinite(sigma)) {
-        const clampedSigma = Math.max(MIN_SIGMA, sigma);
+        const clampedMu = Math.min(MAX_MU, Math.max(0, mu));
+        const clampedSigma = Math.min(DEFAULT_SIGMA, Math.max(MIN_SIGMA, sigma));
         return {
-            mu,
+            mu: clampedMu,
             sigma: clampedSigma,
-            rating: Math.round(displayRatingFromConservativeSkill(mu - 3 * clampedSigma))
+            rating: Math.round(displayRatingFromConservativeSkill(clampedMu - 3 * clampedSigma))
         };
     }
 
     const legacyRating = Number(profile.rating);
     if (Number.isFinite(legacyRating)) {
-        const clampedRating = Math.max(0, legacyRating);
+        const clampedRating = Math.min(MAX_DISPLAY_RATING, Math.max(0, legacyRating));
         const conservativeSkill = conservativeSkillFromDisplayRating(clampedRating);
+        const seedMu = Number.isFinite(conservativeSkill)
+            ? Math.min(MAX_MU, Math.max(0, conservativeSkill + 3 * DEFAULT_SIGMA))
+            : DEFAULT_MU;
         return {
-            mu: conservativeSkill + 3 * DEFAULT_SIGMA,
+            mu: seedMu,
             sigma: DEFAULT_SIGMA,
             rating: Math.round(clampedRating)
         };
@@ -129,8 +139,10 @@ function updateSkillProfiles(winnerProfile, loserProfile) {
     const gamma = 1 / c;
     const v = (pdf * (t + pdf / p)) / p;
 
-    const winnerMu = winner.mu + (winnerSigmaSq / c) * (pdf / p);
-    const loserMu = loser.mu - (loserSigmaSq / c) * (pdf / p);
+    const rawWinnerMu = winner.mu + (winnerSigmaSq / c) * (pdf / p);
+    const rawLoserMu = loser.mu - (loserSigmaSq / c) * (pdf / p);
+    const winnerMu = Number.isFinite(rawWinnerMu) ? Math.min(MAX_MU, Math.max(0, rawWinnerMu)) : winner.mu;
+    const loserMu = Number.isFinite(rawLoserMu) ? Math.min(MAX_MU, Math.max(0, rawLoserMu)) : loser.mu;
     const winnerSigma = Math.sqrt(Math.max(winnerSigmaSq * (1 - winnerSigmaSq * gamma * gamma * v), MIN_SIGMA ** 2));
     const loserSigma = Math.sqrt(Math.max(loserSigmaSq * (1 - loserSigmaSq * gamma * gamma * v), MIN_SIGMA ** 2));
 

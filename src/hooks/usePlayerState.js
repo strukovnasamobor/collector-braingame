@@ -31,7 +31,7 @@ export function usePlayerState() {
           setPlayerState(data.state || 'idle');
         }
       } catch (error) {
-        console.error('Failed to fetch player state:', error);
+        console.error('Failed to fetch player state:', error?.code || error?.message || 'unknown');
       } finally {
         setLoading(false);
       }

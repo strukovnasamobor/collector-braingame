@@ -18,7 +18,7 @@ export function I18nProvider({ children }) {
         setTranslations(data);
         setReady(true);
       })
-      .catch((e) => console.error('Failed to load translations', e));
+      .catch((e) => console.error('Failed to load translations:', e?.message || 'unknown'));
     return () => {
       cancelled = true;
     };
