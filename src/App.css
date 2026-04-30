@@ -234,12 +234,40 @@ body.dark .sk-turn-timer {
   border-radius: 50%;
 }
 
+.sk-dot--pulse {
+  animation: sk-dot-pulse 360ms ease-out forwards;
+  transform-origin: 50% 50%;
+}
+
+@keyframes sk-dot-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.7); box-shadow: 0 0 14px currentColor; }
+  100% { transform: scale(1); box-shadow: 0 0 0 currentColor; }
+}
+
 .sk-connections-svg {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none;
   z-index: 10;
+}
+
+.sk-connection--pulse {
+  animation: sk-connection-pulse 360ms ease-out forwards;
+}
+
+@keyframes sk-connection-pulse {
+  0%   { opacity: 0; stroke-width: 6px; }
+  35%  { opacity: 0.95; stroke-width: 5px; }
+  100% { opacity: 0.6; stroke-width: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-dot--pulse,
+  .sk-connection--pulse {
+    animation: none;
+  }
 }
 
 /* Leaderboard */

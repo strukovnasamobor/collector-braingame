@@ -10,10 +10,45 @@ const MAX_BOARD_MOBILE = 430;
 const MAX_BOARD_DESKTOP = 760;
 const DESKTOP_BREAKPOINT = 900;
 
+const PULSE_STEP_MS = 70;
+const PULSE_MAX_DELAY_MS = 1500;
+const cellKey = (r, c) => `${r}-${c}`;
+
+// BFS from (sr,sc) across same-player 8-connected cells, recording visit order.
+// Returns Map<"r-c", visitIndex>. visitIndex 0 is the seed cell.
+function bfsConnectedOrder(state, size, player, sr, sc) {
+  const order = new Map();
+  if (!state[sr] || !state[sr][sc] || state[sr][sc].player !== player) return order;
+  const queue = [[sr, sc]];
+  order.set(cellKey(sr, sc), 0);
+  let counter = 1;
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = r + dr;
+        const nc = c + dc;
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+        const k = cellKey(nr, nc);
+        if (order.has(k)) continue;
+        const cell = state[nr][nc];
+        if (!cell || cell.player !== player) continue;
+        order.set(k, counter++);
+        queue.push([nr, nc]);
+      }
+    }
+  }
+  return order;
+}
+
 export default function GameBoard({ state, size, history, onCellClick, disabled, phase, lastPlaces }) {
   const wrapperRef = useRef(null);
   const measureRef = useRef(() => { });
   const [pixelSize, setPixelSize] = useState(MAX_BOARD_MOBILE);
+  const prevCountsRef = useRef({ 1: 0, 2: 0 });
+  const pulseIdRef = useRef(0);
+  const [pulse, setPulse] = useState(null); // { id, player, order: Map }
 
   useEffect(() => {
     const measure = () => {
@@ -82,8 +117,48 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
     return normalizeHistory(raw);
   };
 
-  const lines1 = computeConnections(historyForPlayer(1));
-  const lines2 = computeConnections(historyForPlayer(2));
+  const h1 = historyForPlayer(1);
+  const h2 = historyForPlayer(2);
+  const lines1 = computeConnections(h1);
+  const lines2 = computeConnections(h2);
+
+  // Detect a new placement and trigger a "wave" pulse across the connected group.
+  useEffect(() => {
+    const counts = { 1: h1.length, 2: h2.length };
+    const prev = prevCountsRef.current;
+    let placedBy = null;
+    let placedAt = null;
+
+    if (counts[1] > prev[1]) {
+      placedBy = 1;
+      placedAt = h1[h1.length - 1];
+    } else if (counts[2] > prev[2]) {
+      placedBy = 2;
+      placedAt = h2[h2.length - 1];
+    }
+
+    prevCountsRef.current = counts;
+
+    // Reset on game start (history shrunk to 0 for both players).
+    if (counts[1] === 0 && counts[2] === 0) {
+      setPulse(null);
+      return;
+    }
+
+    if (placedBy && Array.isArray(placedAt)) {
+      const [pr, pc] = placedAt;
+      if (state[pr]?.[pc]?.player === placedBy) {
+        const order = bfsConnectedOrder(state, size, placedBy, pr, pc);
+        pulseIdRef.current += 1;
+        setPulse({ id: pulseIdRef.current, player: placedBy, order });
+      }
+    }
+    // history is the trigger; state is needed for BFS at the moment of placement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history]);
+
+  const pulseDelay = (visitIndex) =>
+    Math.min(visitIndex * PULSE_STEP_MS, PULSE_MAX_DELAY_MS);
 
   return (
     <div className="sk-grid-wrapper" ref={wrapperRef}>
@@ -115,6 +190,24 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
               }
             }
             const blocked = disabled || occupiedOrGone || nonNeighborInEliminate || unplaceableInPlace;
+
+            const pulseOrder =
+              pulse && pulse.player === cell.player
+                ? pulse.order.get(cellKey(i, j))
+                : undefined;
+            const dotKey =
+              pulseOrder !== undefined
+                ? `pulse-${pulse.id}-${i}-${j}`
+                : `static-${i}-${j}`;
+            const dotStyle = {
+              backgroundColor: cell.player === 1 ? P1_COLOR : P2_COLOR,
+              width: dotPx,
+              height: dotPx
+            };
+            if (pulseOrder !== undefined) {
+              dotStyle.animationDelay = `${pulseDelay(pulseOrder)}ms`;
+            }
+
             return (
               <div
                 key={`${i}-${j}`}
@@ -128,12 +221,9 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
               >
                 {cell.player && (
                   <div
-                    className="sk-dot"
-                    style={{
-                      backgroundColor: cell.player === 1 ? P1_COLOR : P2_COLOR,
-                      width: dotPx,
-                      height: dotPx
-                    }}
+                    key={dotKey}
+                    className={`sk-dot${pulseOrder !== undefined ? ' sk-dot--pulse' : ''}`}
+                    style={dotStyle}
                   />
                 )}
               </div>
@@ -147,32 +237,56 @@ export default function GameBoard({ state, size, history, onCellClick, disabled,
           height={totalPx}
           viewBox={`0 0 ${totalPx} ${totalPx}`}
         >
-          {lines1.map(([[r1, c1], [r2, c2]], idx) => (
-            <line
-              key={`p1-${idx}`}
-              x1={(c1 + 0.5) * cellPx}
-              y1={(r1 + 0.5) * cellPx}
-              x2={(c2 + 0.5) * cellPx}
-              y2={(r2 + 0.5) * cellPx}
-              stroke={P1_COLOR}
-              strokeWidth={3}
-              strokeLinecap="round"
-              opacity={0.6}
-            />
-          ))}
-          {lines2.map(([[r1, c1], [r2, c2]], idx) => (
-            <line
-              key={`p2-${idx}`}
-              x1={(c1 + 0.5) * cellPx}
-              y1={(r1 + 0.5) * cellPx}
-              x2={(c2 + 0.5) * cellPx}
-              y2={(r2 + 0.5) * cellPx}
-              stroke={P2_COLOR}
-              strokeWidth={3}
-              strokeLinecap="round"
-              opacity={0.6}
-            />
-          ))}
+          {lines1.map(([[r1, c1], [r2, c2]], idx) => {
+            const inPulse =
+              pulse && pulse.player === 1 &&
+              pulse.order.has(cellKey(r1, c1)) &&
+              pulse.order.has(cellKey(r2, c2));
+            const lineKey = inPulse ? `p1-pulse-${pulse.id}-${idx}` : `p1-${idx}`;
+            const style = inPulse
+              ? { animationDelay: `${pulseDelay(Math.max(pulse.order.get(cellKey(r1, c1)), pulse.order.get(cellKey(r2, c2))))}ms` }
+              : undefined;
+            return (
+              <line
+                key={lineKey}
+                className={inPulse ? 'sk-connection sk-connection--pulse' : 'sk-connection'}
+                x1={(c1 + 0.5) * cellPx}
+                y1={(r1 + 0.5) * cellPx}
+                x2={(c2 + 0.5) * cellPx}
+                y2={(r2 + 0.5) * cellPx}
+                stroke={P1_COLOR}
+                strokeWidth={3}
+                strokeLinecap="round"
+                opacity={0.6}
+                style={style}
+              />
+            );
+          })}
+          {lines2.map(([[r1, c1], [r2, c2]], idx) => {
+            const inPulse =
+              pulse && pulse.player === 2 &&
+              pulse.order.has(cellKey(r1, c1)) &&
+              pulse.order.has(cellKey(r2, c2));
+            const lineKey = inPulse ? `p2-pulse-${pulse.id}-${idx}` : `p2-${idx}`;
+            const style = inPulse
+              ? { animationDelay: `${pulseDelay(Math.max(pulse.order.get(cellKey(r1, c1)), pulse.order.get(cellKey(r2, c2))))}ms` }
+              : undefined;
+            return (
+              <line
+                key={lineKey}
+                className={inPulse ? 'sk-connection sk-connection--pulse' : 'sk-connection'}
+                x1={(c1 + 0.5) * cellPx}
+                y1={(r1 + 0.5) * cellPx}
+                x2={(c2 + 0.5) * cellPx}
+                y2={(r2 + 0.5) * cellPx}
+                stroke={P2_COLOR}
+                strokeWidth={3}
+                strokeLinecap="round"
+                opacity={0.6}
+                style={style}
+              />
+            );
+          })}
         </svg>
       </div>
     </div>
