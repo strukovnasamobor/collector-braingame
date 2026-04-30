@@ -1,9 +1,11 @@
+/* Fixed full-viewport overlay; card sits in the absolute center.
+ * pointer-events: none so the board, status, tab bar, etc. stay interactive. */
 .sk-milestone-overlay {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   pointer-events: none;
   z-index: 9999;
 }
@@ -12,55 +14,58 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 0.3em;
   text-align: center;
-  padding: 18px 28px;
+  padding: 12px 24px;
   border: 1.5px solid var(--sk-cell-border);
   border-radius: 14px;
   background: var(--sk-dialog-bg);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
   animation: sk-milestone-pop 2200ms ease-out forwards;
 }
 
 .sk-milestone-word {
-  font-size: 7vh;
+  font-size: 5vh;
   font-weight: 800;
   letter-spacing: 0.04em;
   line-height: 1;
 }
 
 .sk-milestone-count {
-  font-size: 2.6vh;
+  font-size: 2vh;
   font-weight: 700;
   opacity: 0.9;
-  margin-top: 0.5em;
   line-height: 1;
 }
 
 .sk-milestone-tagline {
-  font-size: 3vh;
+  font-size: 2.4vh;
   font-weight: 700;
   opacity: 0.9;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-bottom: 0.5em;
   line-height: 1;
 }
 
 .sk-milestone-stack--max {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+  padding: 16px 32px;
   animation-duration: 3500ms;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35), 0 0 24px currentColor;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px currentColor;
 }
 
 .sk-milestone-stack--max .sk-milestone-word {
-  font-size: 11vh;
+  font-size: 8vh;
 }
 
 .sk-milestone-stack--max .sk-milestone-count {
-  font-size: 4vh;
+  font-size: 3vh;
 }
 
 .sk-milestone-stack--max .sk-milestone-tagline {
-  font-size: 4vh;
+  font-size: 3vh;
 }
 
 @keyframes sk-milestone-pop {

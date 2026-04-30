@@ -8,9 +8,9 @@ const PLAYER_PALETTES = {
 const MAX_PALETTE = ['#dc3545', '#ff6b3d', '#007bff', '#3dd5f3', '#ffd700'];
 const PLAYER_COLOR = { 1: '#dc3545', 2: '#007bff' };
 
-const NORMAL_DURATION_MS = 2200;
-const MAX_DURATION_MS = 3500;
-const REDUCED_MOTION_DURATION_MS = 1800;
+const NORMAL_DURATION_MS = 1300;
+const MAX_DURATION_MS = 2200;
+const REDUCED_MOTION_DURATION_MS = 1000;
 
 let sharedAudioCtx = null;
 let activeMaster = null;
@@ -181,14 +181,15 @@ function playChime(event) {
     return;
   }
 
-  // Per-word variety: motif cycles, base pitch climbs the scale with level.
-  // Use level directly as the position so each milestone has its own fingerprint.
-  const level = event.level || 0;
-  const motif = MOTIFS[level % MOTIFS.length];
-  // Base degree: starts around C5 (degree 14) for the lowest milestone we ever
-  // fire (level 2 on 6×6) and walks up the scale from there. Capped so we don't
-  // run off the high end of the audible range.
-  const baseDegree = Math.min(SCALE.length - 8, 12 + level);
+  // Per-word variety: motif cycles, base pitch climbs the scale with the word
+  // degree (the milestone's position in the word list, stable across grid sizes).
+  // The same word ("Great", "Awesome", etc.) sounds the same on a 6×6 board as
+  // on a 12×12 board, regardless of how many dots back it.
+  const degree = Math.max(1, event.degree || 1);
+  const motif = MOTIFS[(degree - 1) % MOTIFS.length];
+  // Base scale position: starts around F4 for degree 1 ("Good") and walks up
+  // two scale steps per degree. Capped so we don't run off the high end.
+  const baseDegree = Math.min(SCALE.length - 8, 6 + degree * 2);
 
   let cursor = startBase;
   motif.forEach((offset, i) => {
@@ -201,41 +202,40 @@ function playChime(event) {
   });
 }
 
+// Maps a word's degree (1-indexed position in the milestone list) to the exact
+// burst-count + particles-per-burst pair the celebration should fire. Tiered
+// so each new burst level resets to a smaller particle count, then climbs.
+//   1-7   (Good..Awesome)     -> 1 burst,  10..70 particles
+//   8-11  (Fabulous..Terrific) -> 2 bursts, 40..70 particles each
+//   12-18 (Fantastic..Spectacular) -> 3 bursts, 50..110 each
+//   19-26 (Extraordinary..Sublime) -> 4 bursts, 80..150 each
+//   27+   (THE COLLECTOR)     -> 5 bursts, 200 each
+function celebrationParams(degree) {
+  if (degree >= 27) return { burstCount: 5, particlesPerBurst: 200 };
+  if (degree >= 19) return { burstCount: 4, particlesPerBurst: (degree - 11) * 10 };
+  if (degree >= 12) return { burstCount: 3, particlesPerBurst: (degree - 7) * 10 };
+  if (degree >= 8) return { burstCount: 2, particlesPerBurst: (degree - 4) * 10 };
+  return { burstCount: 1, particlesPerBurst: Math.max(10, degree * 10) };
+}
+
 function fireConfetti(confetti, event) {
   const colors = event.isMax ? MAX_PALETTE : PLAYER_PALETTES[event.player] || PLAYER_PALETTES[1];
+  const degree = Math.max(1, event.degree || 1);
+  const { burstCount, particlesPerBurst } = celebrationParams(degree);
+  const spread = event.isMax ? 360 : Math.min(180, 80 + degree * 6);
 
-  if (event.isMax) {
-    const bursts = [
-      { x: 0.2, y: 0.6 },
-      { x: 0.5, y: 0.5 },
-      { x: 0.8, y: 0.6 }
-    ];
-    bursts.forEach((origin, idx) => {
-      setTimeout(() => {
-        confetti({
-          particleCount: 200,
-          spread: 110,
-          startVelocity: 55,
-          origin,
-          colors,
-          disableForReducedMotion: true
-        });
-      }, idx * 250);
-    });
-    return;
+  for (let i = 0; i < burstCount; i++) {
+    setTimeout(() => {
+      confetti({
+        particleCount: particlesPerBurst,
+        spread,
+        startVelocity: event.isMax ? 60 : 55,
+        origin: { x: 0.5, y: 0.5 },
+        colors,
+        disableForReducedMotion: true
+      });
+    }, i * 160);
   }
-
-  const baseLevel = event.level || 1;
-  const particleCount = Math.min(250, 30 + baseLevel * 5);
-  const spread = Math.min(120, 50 + baseLevel * 2);
-  confetti({
-    particleCount,
-    spread,
-    startVelocity: 45,
-    origin: { x: 0.5, y: 0.5 },
-    colors,
-    disableForReducedMotion: true
-  });
 }
 
 export default function MilestoneCelebration({ event, onDone }) {

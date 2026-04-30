@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import {
   createInitialState,
   isValidPlacement,
@@ -9,6 +9,11 @@ import {
   getBiggestGroup,
   LOCAL_MAX_TIMEOUTS
 } from '../game/gameEngine';
+import { chooseAIMove } from '../game/aiEngine';
+
+const AI_MOVE_DELAY_MS = 450;
+const aiAlgoForPlayer = (cfg, player) =>
+  player === 1 ? cfg?.player1AI : cfg?.player2AI;
 
 const LocalGameContext = createContext(null);
 
@@ -27,8 +32,15 @@ export function LocalGameProvider({ children }) {
   const [result, setResult] = useState(null); // { winner, score1, score2, message }
 
   const startGame = useCallback(
-    ({ player1Name, player2Name, gridSize, timerEnabled }) => {
-      setConfig({ player1Name, player2Name, gridSize, timerEnabled });
+    ({ player1Name, player2Name, gridSize, timerEnabled, player1AI, player2AI }) => {
+      setConfig({
+        player1Name,
+        player2Name,
+        gridSize,
+        timerEnabled,
+        player1AI: player1AI ?? null,
+        player2AI: player2AI ?? null
+      });
       setState(createInitialState(gridSize));
       setCurrentPlayer(1);
       setPhase('place');
@@ -144,6 +156,23 @@ export function LocalGameProvider({ children }) {
     setTurnKey((k) => k + 1);
   }, [config, state, history, phase, currentPlayer, lastPlaces, timeouts, result, finalize]);
 
+  useEffect(() => {
+    if (!config || result) return undefined;
+    const algo = aiAlgoForPlayer(config, currentPlayer);
+    if (!algo) return undefined;
+    const move = chooseAIMove({
+      algorithm: algo,
+      state,
+      size: config.gridSize,
+      phase,
+      lastPlaces,
+      currentPlayer
+    });
+    if (!move) return undefined;
+    const id = setTimeout(() => placeDot(move.row, move.col), AI_MOVE_DELAY_MS);
+    return () => clearTimeout(id);
+  }, [config, result, currentPlayer, phase, lastPlaces, state, placeDot]);
+
   const scores = useMemo(() => {
     if (!config || state.length === 0) return { 1: 0, 2: 0 };
     return {
@@ -168,7 +197,8 @@ export function LocalGameProvider({ children }) {
     resetGame,
     clearGame,
     onTimeout,
-    isActive: !!config && !result
+    isActive: !!config && !result,
+    isAITurn: !!config && !result && !!aiAlgoForPlayer(config, currentPlayer)
   };
 
   return <LocalGameContext.Provider value={value}>{children}</LocalGameContext.Provider>;

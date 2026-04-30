@@ -181,6 +181,30 @@
   background: var(--sk-dialog-bg);
 }
 
+.sk-status--game-over {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  max-width: min(100%, 360px);
+}
+
+.sk-game-over-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.sk-game-over-message {
+  font-weight: 600;
+}
+
+.sk-game-over-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .sk-turn-timer {
   text-align: center;
   font-size: 28px;

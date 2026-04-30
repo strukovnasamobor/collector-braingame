@@ -124,10 +124,11 @@ export default function OnlineGamePage() {
   useEffect(() => {
     registerExit({
       tabRoot: '/online',
+      silent: !!finalResult,
       onConfirm: handleQuit
     });
     return () => clearExit('/online');
-  }, [registerExit, clearExit, handleQuit]);
+  }, [registerExit, clearExit, handleQuit, finalResult]);
 
   const message = useMemo(() => {
     if (!finalResult || !data) return '';

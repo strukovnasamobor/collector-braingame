@@ -94,6 +94,10 @@ export function useGroupMilestones({ scores, matchKey, watchPlayers, enabled, gr
             id: idRef.current,
             player: p,
             level: target,
+            // 1-indexed position in the word progression — stable across grid sizes
+            // (e.g., "Great" is always degree 4) so chime + confetti scaling is
+            // tied to the named milestone, not the raw dot count.
+            degree: levels.indexOf(target) + 1,
             word,
             isMax: word === 'COLLECTOR'
           });

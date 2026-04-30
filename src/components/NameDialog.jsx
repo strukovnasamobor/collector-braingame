@@ -25,13 +25,24 @@ export default function NameDialog({ open, onCancel, onStart }) {
   const [p2, setP2] = useState('');
   const [size, setSize] = useState(6);
   const [timer, setTimer] = useState(false);
+  const [p1AI, setP1AI] = useState(false);
+  const [p1Algo, setP1Algo] = useState('greedy');
+  const [p2AI, setP2AI] = useState(false);
+  const [p2Algo, setP2Algo] = useState('greedy');
   const [error, setError] = useState('');
 
   const handleStart = () => {
     const p1t = sanitizeDisplayName(p1) || 'Player 1';
     const p2t = sanitizeDisplayName(p2) || 'Player 2';
     setError('');
-    onStart({ player1Name: p1t, player2Name: p2t, gridSize: size, timerEnabled: timer });
+    onStart({
+      player1Name: p1t,
+      player2Name: p2t,
+      gridSize: size,
+      timerEnabled: timer,
+      player1AI: p1AI ? p1Algo : null,
+      player2AI: p2AI ? p2Algo : null
+    });
   };
 
   return (
@@ -49,21 +60,51 @@ export default function NameDialog({ open, onCancel, onStart }) {
       <IonContent className="ion-padding">
         <IonItem>
           <IonLabel position="stacked">{t('game.player1_name')}</IonLabel>
-          <IonInput
-            value={p1}
-            placeholder={t('game.player1_placeholder')}
-            maxlength={DISPLAY_NAME_MAX}
-            onIonInput={(e) => setP1(e.detail.value || '')}
-          />
+          {p1AI ? (
+            <IonSelect value={p1Algo} onIonChange={(e) => setP1Algo(e.detail.value)}>
+              <IonSelectOption value="greedy">{t('game.ai_algo_greedy')}</IonSelectOption>
+              <IonSelectOption value="defensive">{t('game.ai_algo_defensive')}</IonSelectOption>
+            </IonSelect>
+          ) : (
+            <IonInput
+              value={p1}
+              placeholder={t('game.player1_placeholder')}
+              maxlength={DISPLAY_NAME_MAX}
+              onIonInput={(e) => setP1(e.detail.value || '')}
+            />
+          )}
+          <IonCheckbox
+            slot="end"
+            checked={p1AI}
+            labelPlacement="start"
+            onIonChange={(e) => setP1AI(e.detail.checked)}
+          >
+            {t('game.ai_label')}
+          </IonCheckbox>
         </IonItem>
         <IonItem>
           <IonLabel position="stacked">{t('game.player2_name')}</IonLabel>
-          <IonInput
-            value={p2}
-            placeholder={t('game.player2_placeholder')}
-            maxlength={DISPLAY_NAME_MAX}
-            onIonInput={(e) => setP2(e.detail.value || '')}
-          />
+          {p2AI ? (
+            <IonSelect value={p2Algo} onIonChange={(e) => setP2Algo(e.detail.value)}>
+              <IonSelectOption value="greedy">{t('game.ai_algo_greedy')}</IonSelectOption>
+              <IonSelectOption value="defensive">{t('game.ai_algo_defensive')}</IonSelectOption>
+            </IonSelect>
+          ) : (
+            <IonInput
+              value={p2}
+              placeholder={t('game.player2_placeholder')}
+              maxlength={DISPLAY_NAME_MAX}
+              onIonInput={(e) => setP2(e.detail.value || '')}
+            />
+          )}
+          <IonCheckbox
+            slot="end"
+            checked={p2AI}
+            labelPlacement="start"
+            onIonChange={(e) => setP2AI(e.detail.checked)}
+          >
+            {t('game.ai_label')}
+          </IonCheckbox>
         </IonItem>
         <IonItem>
           <IonLabel position="stacked">{t('game.grid_size_label')}</IonLabel>

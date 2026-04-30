@@ -1,16 +1,18 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useHistory } from 'react-router-dom';
 import {
   IonPage,
   IonContent,
-  IonAlert
+  IonButton
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
+import MilestoneCelebration from '../components/MilestoneCelebration';
 import { useI18n } from '../contexts/I18nContext';
 import { useLocalGame } from '../contexts/LocalGameContext';
 import { useGameTimer } from '../hooks/useGameTimer';
 import { useGameExit } from '../contexts/GameExitContext';
+import { useGroupMilestones } from '../hooks/useGroupMilestones';
 
 export default function OfflineGamePage() {
   const { t } = useI18n();
@@ -29,10 +31,28 @@ export default function OfflineGamePage() {
     clearGame,
     resetGame,
     onTimeout,
-    isActive
+    isActive,
+    isAITurn,
+    matchId
   } = useLocalGame();
 
   const { registerExit, clearExit } = useGameExit();
+
+  const humanPlayers = useMemo(() => {
+    if (!config) return [];
+    const list = [];
+    if (!config.player1AI) list.push(1);
+    if (!config.player2AI) list.push(2);
+    return list;
+  }, [config]);
+
+  const { event: milestoneEvent, dismiss: dismissMilestone } = useGroupMilestones({
+    scores,
+    matchKey: matchId,
+    watchPlayers: humanPlayers,
+    enabled: !!config,
+    gridSize: config?.gridSize
+  });
 
   useEffect(() => {
     if (!config) history.replace('/offline');
@@ -41,13 +61,14 @@ export default function OfflineGamePage() {
   useEffect(() => {
     registerExit({
       tabRoot: '/offline',
+      silent: !!result,
       onConfirm: () => {
         clearGame();
         history.replace('/offline');
       }
     });
     return () => clearExit('/offline');
-  }, [registerExit, clearExit, clearGame, history]);
+  }, [registerExit, clearExit, clearGame, history, result]);
 
   const seconds = useGameTimer({
     enabled: !!config && !!config.timerEnabled && isActive,
@@ -58,11 +79,19 @@ export default function OfflineGamePage() {
   if (!config) return null;
 
   const name = currentPlayer === 1 ? config.player1Name : config.player2Name;
-  const statusText =
-    phase === 'place'
+  const statusText = isAITurn
+    ? t('game.ai_thinking', { player: name })
+    : phase === 'place'
       ? t('game.phase_place', { player: name })
       : t('game.phase_eliminate', { player: name });
   const statusColor = currentPlayer === 1 ? '#dc3545' : '#007bff';
+  const gameOverColor = result
+    ? result.winner === 1
+      ? '#dc3545'
+      : result.winner === 2
+        ? '#007bff'
+        : undefined
+    : undefined;
 
   const buildGameOverMessage = () => {
     if (!result) return '';
@@ -108,7 +137,7 @@ export default function OfflineGamePage() {
             size={config.gridSize}
             history={placementHistory}
             onCellClick={placeDot}
-            disabled={!isActive}
+            disabled={!isActive || isAITurn}
             phase={phase}
             lastPlaces={lastPlaces}
           />
@@ -117,34 +146,37 @@ export default function OfflineGamePage() {
             <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>{seconds}</div>
           )}
 
-          <div className="sk-status" style={{ color: statusColor }}>
-            {isActive ? statusText : ''}
-          </div>
+          {result ? (
+            <div
+              className="sk-status sk-status--game-over"
+              style={{ color: gameOverColor, whiteSpace: 'pre-line' }}
+            >
+              <div className="sk-game-over-title">{t('game.game_over_title')}</div>
+              <div className="sk-game-over-message">{buildGameOverMessage()}</div>
+              <div className="sk-game-over-actions">
+                <IonButton size="small" onClick={resetGame}>
+                  {t('game.new_game_button')}
+                </IonButton>
+                <IonButton
+                  size="small"
+                  fill="outline"
+                  onClick={() => {
+                    clearGame();
+                    history.replace('/offline');
+                  }}
+                >
+                  {t('game.main_menu_button')}
+                </IonButton>
+              </div>
+            </div>
+          ) : (
+            <div className="sk-status" style={{ color: statusColor }}>
+              {isActive ? statusText : ''}
+            </div>
+          )}
         </div>
 
-        <IonAlert
-          cssClass="sk-alert-pre"
-          isOpen={!!result}
-          backdropDismiss={false}
-          header={t('game.game_over_title')}
-          message={buildGameOverMessage()}
-          buttons={[
-            {
-              text: t('game.new_game_button'),
-              handler: () => {
-                resetGame();
-              }
-            },
-            {
-              text: t('notifications.ok_button'),
-              role: 'cancel',
-              handler: () => {
-                clearGame();
-                history.replace('/offline');
-              }
-            }
-          ]}
-        />
+        <MilestoneCelebration event={milestoneEvent} onDone={dismissMilestone} />
       </IonContent>
     </IonPage>
   );
