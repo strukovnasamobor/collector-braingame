@@ -1,4 +1,5 @@
-? online AI
+? online AI or/and offline AI
+- show msg, confetti and sound only when playing online for ratings not casual and against expert AI in offline
 
 Ver. 1.0 (1)
 - remove printing logs

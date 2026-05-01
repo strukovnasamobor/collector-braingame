@@ -8,9 +8,8 @@ const PLAYER_PALETTES = {
 const MAX_PALETTE = ['#dc3545', '#ff6b3d', '#007bff', '#3dd5f3', '#ffd700'];
 const PLAYER_COLOR = { 1: '#dc3545', 2: '#007bff' };
 
-const NORMAL_DURATION_MS = 1300;
-const MAX_DURATION_MS = 2200;
-const REDUCED_MOTION_DURATION_MS = 1000;
+const NORMAL_DURATION_MS = 1500;
+const MAX_DURATION_MS = 4000;
 
 let sharedAudioCtx = null;
 let activeMaster = null;
@@ -232,7 +231,7 @@ function fireConfetti(confetti, event) {
         startVelocity: event.isMax ? 60 : 55,
         origin: { x: 0.5, y: 0.5 },
         colors,
-        disableForReducedMotion: true
+        disableForReducedMotion: false
       });
     }, i * 160);
   }
@@ -242,11 +241,6 @@ export default function MilestoneCelebration({ event, onDone }) {
   useEffect(() => {
     if (!event) return undefined;
 
-    const reducedMotion =
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
     let cancelled = false;
 
     try {
@@ -255,22 +249,18 @@ export default function MilestoneCelebration({ event, onDone }) {
       console.warn('milestone chime failed', err);
     }
 
-    if (!reducedMotion) {
-      import('canvas-confetti')
-        .then((mod) => {
-          if (cancelled) return;
-          fireConfetti(mod.default, event);
-        })
-        .catch((err) => {
-          console.warn('canvas-confetti failed to load', err);
-        });
-    }
+    // Confetti always fires, even when the OS requests reduced motion —
+    // it's treated as a celebratory accent rather than essential animation.
+    import('canvas-confetti')
+      .then((mod) => {
+        if (cancelled) return;
+        fireConfetti(mod.default, event);
+      })
+      .catch((err) => {
+        console.warn('canvas-confetti failed to load', err);
+      });
 
-    const duration = reducedMotion
-      ? REDUCED_MOTION_DURATION_MS
-      : event.isMax
-      ? MAX_DURATION_MS
-      : NORMAL_DURATION_MS;
+    const duration = event.isMax ? MAX_DURATION_MS : NORMAL_DURATION_MS;
 
     const timer = setTimeout(() => {
       if (!cancelled) onDone?.();

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { computeConnections, hasAdjacentFree } from '../game/gameEngine';
+import { computeConnections, hasAdjacentFree, isValidElimination } from '../game/gameEngine';
 import { normalizeHistory } from '../utils/coordinateNormalization';
 
 const P1_COLOR = '#dc3545';
@@ -58,6 +58,15 @@ export default function GameBoard({
   const prevCountsRef = useRef({ 1: 0, 2: 0 });
   const pulseIdRef = useRef(0);
   const [pulse, setPulse] = useState(null); // { id, player, order: Map }
+  // invalidNonce > 0 while the "invalid eliminate target" hint animation runs:
+  // the just-placed dot pulses and the valid neighbour cells glow.
+  const [invalidNonce, setInvalidNonce] = useState(0);
+
+  useEffect(() => {
+    if (invalidNonce === 0) return undefined;
+    const timer = setTimeout(() => setInvalidNonce(0), 700);
+    return () => clearTimeout(timer);
+  }, [invalidNonce]);
 
   useEffect(() => {
     const measure = () => {
@@ -214,8 +223,16 @@ export default function GameBoard({
               pulse && pulse.player === cell.player
                 ? pulse.order.get(cellKey(i, j))
                 : undefined;
-            const dotKey =
-              pulseOrder !== undefined
+            const showHint = invalidNonce > 0;
+            const isLastPlacedCell =
+              !!(lastPlaces && i === lastPlaces.row && j === lastPlaces.col);
+            const isValidEliminateNeighbour =
+              showHint && phase === 'eliminate' && isValidElimination(state, lastPlaces, i, j);
+            const showAttention =
+              showHint && isLastPlacedCell && cell.player !== null;
+            const dotKey = showAttention
+              ? `attn-${invalidNonce}-${i}-${j}`
+              : pulseOrder !== undefined
                 ? `pulse-${pulse.id}-${i}-${j}`
                 : `static-${i}-${j}`;
             const dotStyle = {
@@ -226,22 +243,43 @@ export default function GameBoard({
             if (pulseOrder !== undefined) {
               dotStyle.animationDelay = `${pulseDelay(pulseOrder)}ms`;
             }
+            const cellClassName = [
+              'sk-cell',
+              cell.eliminated ? 'eliminated' : '',
+              blocked ? 'blocked' : '',
+              isValidEliminateNeighbour ? 'sk-cell--neighbour-glow' : ''
+            ].filter(Boolean).join(' ');
+            const dotClassName = [
+              'sk-dot',
+              pulseOrder !== undefined ? 'sk-dot--pulse' : '',
+              showAttention ? 'sk-dot--invalid-attention' : ''
+            ].filter(Boolean).join(' ');
 
             return (
               <div
                 key={`${i}-${j}`}
-                className={`sk-cell${cell.eliminated ? ' eliminated' : ''}${blocked ? ' blocked' : ''}`}
+                className={cellClassName}
                 style={{
                   width: cellPx,
                   height: cellPx,
                   cursor: blocked ? 'not-allowed' : 'pointer'
                 }}
-                onClick={() => !blocked && onCellClick(i, j)}
+                onClick={() => {
+                  if (blocked) {
+                    // Only flash the "wrong target" hint while we have a placed
+                    // dot to point at — i.e. the eliminate sub-phase.
+                    if (!disabled && phase === 'eliminate' && lastPlaces) {
+                      setInvalidNonce((n) => n + 1);
+                    }
+                    return;
+                  }
+                  onCellClick(i, j);
+                }}
               >
                 {cell.player && (
                   <div
                     key={dotKey}
-                    className={`sk-dot${pulseOrder !== undefined ? ' sk-dot--pulse' : ''}`}
+                    className={dotClassName}
                     style={dotStyle}
                   />
                 )}
