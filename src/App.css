@@ -199,6 +199,16 @@
   font-weight: 600;
 }
 
+/* Rating-change line in the game-over panel: visually de-emphasised so the
+ * "{winner} wins!" headline still dominates. */
+.sk-game-over-rating {
+  display: inline-block;
+  font-size: 0.78em;
+  font-weight: 400;
+  opacity: 0.85;
+  letter-spacing: 0.01em;
+}
+
 .sk-game-over-actions {
   display: flex;
   gap: 8px;

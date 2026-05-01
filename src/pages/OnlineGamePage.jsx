@@ -4,8 +4,8 @@ import {
   IonPage,
   IonContent,
   IonAlert,
-  IonSpinner,
-  IonicSafeString
+  IonButton,
+  IonSpinner
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
@@ -141,63 +141,61 @@ export default function OnlineGamePage() {
     return () => clearExit('/online');
   }, [registerExit, clearExit, handleQuit, finalResult]);
 
-  const message = useMemo(() => {
-    if (!finalResult || !data) return '';
-    const { winner, score1, score2, timeout, loser, delta1, delta2, newR1, newR2 } =
-      finalResult;
+  const renderWinnerLine = (winnerName, winnerNumber) => {
+    const winnerColor = winnerNumber === 1 ? '#dc3545' : '#007bff';
+    return (
+      <span className="sk-winner-name" style={{ color: winnerColor }}>
+        {t('game.game_over_winner', { player: winnerName })}
+      </span>
+    );
+  };
+
+  const buildGameOverMessage = () => {
+    if (!finalResult || !data) return null;
+    const { winner, timeout, loser, delta1, delta2, newR1, newR2 } = finalResult;
     const p1 = data.player1name;
     const p2 = data.player2name;
-    const escapeHtml = (s) => String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-    // Inline animation styles must be in the rendered HTML because the alert
-    // lives inside Ionic's shadow DOM where global @keyframes can't reach.
-    const animStyle =
-      'display:inline-block;font-weight:900;' +
-      'animation:sk-winner-pulse-alert 900ms ease-in-out infinite;';
-    const keyframesStyle =
-      '<style>@keyframes sk-winner-pulse-alert{' +
-      '0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}</style>';
-    // Whole "{name} wins!" line pulses in the winner's color.
-    const winnerLine = (name, num) => {
-      const color = num === 1 ? '#dc3545' : '#007bff';
-      const text = t('game.game_over_winner', { player: name });
-      return `<span style="${animStyle}color:${color}">${escapeHtml(text)}</span>`;
-    };
     const ratingLine =
-      delta1 != null && delta2 != null
-        ? '\n' +
-        escapeHtml(
-          t('game.rating_change', {
-            p1,
-            d1: formatDelta(delta1),
-            r1: newR1,
-            p2,
-            d2: formatDelta(delta2),
-            r2: newR2
-          })
-        )
-        : '';
-    let html;
+      delta1 != null && delta2 != null ? (
+        <>
+          {'\n'}
+          <span className="sk-game-over-rating">
+            {p1} {formatDelta(delta1)} ({newR1})
+          </span>
+          {'\n'}
+          <span className="sk-game-over-rating">
+            {p2} {formatDelta(delta2)} ({newR2})
+          </span>
+        </>
+      ) : null;
     if (timeout) {
       const loserName = loser === 1 ? p1 : p2;
       const winnerName = winner === 1 ? p1 : p2;
-      html =
-        escapeHtml(t('game.timeout_loss', { player: loserName })) +
-        '\n' +
-        winnerLine(winnerName, winner) +
-        ratingLine;
-    } else if (winner === 0) {
-      html = escapeHtml(t('game.game_over_draw')) + ratingLine;
-    } else {
-      const winnerName = winner === 1 ? p1 : p2;
-      html = winnerLine(winnerName, winner) + ratingLine;
+      return (
+        <>
+          {t('game.timeout_loss', { player: loserName })}
+          {'\n'}
+          {renderWinnerLine(winnerName, winner)}
+          {ratingLine}
+        </>
+      );
     }
-    return new IonicSafeString(keyframesStyle + html);
-  }, [finalResult, data, t]);
+    if (winner === 0) {
+      return (
+        <>
+          {t('game.game_over_draw')}
+          {ratingLine}
+        </>
+      );
+    }
+    const winnerName = winner === 1 ? p1 : p2;
+    return (
+      <>
+        {renderWinnerLine(winnerName, winner)}
+        {ratingLine}
+      </>
+    );
+  };
 
   if (!data) {
     return (
@@ -264,13 +262,33 @@ export default function OnlineGamePage() {
             </div>
           )}
 
-          <div
-            key={`status-${statusPulseKey}`}
-            className={`sk-status${statusPulseKey > 0 ? ' sk-status--pulse' : ''}`}
-            style={{ color: statusColor }}
-          >
-            {data.status === 'active' ? statusText : ''}
-          </div>
+          {data.status !== 'active' ? (
+            // Show the Game Over panel + spinner the instant the game state
+            // flips to finished/cancelled/left, then swap the spinner for the
+            // real winner + rating line as soon as `finalResult` is computed.
+            <div
+              className="sk-status sk-status--game-over"
+              style={{ whiteSpace: 'pre-line' }}
+            >
+              <div className="sk-game-over-title">{t('game.game_over_title')}</div>
+              <div className="sk-game-over-message">
+                {finalResult ? buildGameOverMessage() : <IonSpinner name="dots" />}
+              </div>
+              <div className="sk-game-over-actions">
+                <IonButton size="small" fill="outline" onClick={handleQuit}>
+                  {t('game.main_menu_button')}
+                </IonButton>
+              </div>
+            </div>
+          ) : (
+            <div
+              key={`status-${statusPulseKey}`}
+              className={`sk-status${statusPulseKey > 0 ? ' sk-status--pulse' : ''}`}
+              style={{ color: statusColor }}
+            >
+              {statusText}
+            </div>
+          )}
         </div>
 
         <MilestoneCelebration event={milestoneEvent} onDone={dismissMilestone} />
@@ -309,19 +327,6 @@ export default function OnlineGamePage() {
           ]}
         />
 
-        <IonAlert
-          cssClass="sk-alert-pre"
-          isOpen={!!finalResult}
-          backdropDismiss={false}
-          header={t('game.game_over_title')}
-          message={message}
-          buttons={[
-            {
-              text: t('notifications.ok_button'),
-              handler: handleQuit
-            }
-          ]}
-        />
       </IonContent>
     </IonPage>
   );
