@@ -5,7 +5,7 @@ import {
 } from '../game/gameEngine';
 import { normalizeSkillProfile } from '../game/skillRating';
 
-const STORAGE_KEY = 'sakupljac_players_v1';
+const STORAGE_KEY = 'collector-braingame_players_v1';
 
 function normalizeKey(name) {
   return name.trim().toLocaleLowerCase('hr');

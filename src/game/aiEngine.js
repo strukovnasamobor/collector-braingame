@@ -1,138 +1,78 @@
-import {
-  isValidPlacement,
-  isValidElimination,
-  applyPlace,
-  applyEliminate,
-  getBiggestGroup
-} from './gameEngine';
+// Main-thread API for AI move selection. The actual search runs in a Web Worker
+// so the UI stays responsive during 3-6s budgets.
 
-export const AI_ALGORITHMS = ['greedy', 'defensive'];
+import AISearchWorker from './aiSearch.worker.js?worker';
+import { AI_TIERS, TIER_ORDER } from './aiTiers';
 
-const opponentOf = (player) => (player === 1 ? 2 : 1);
+let worker = null;
+let nextRequestId = 1;
+const pending = new Map(); // requestId → { resolve, reject, signal, onAbort }
 
-export function listValidPlacements(state, size) {
-  const moves = [];
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (isValidPlacement(state, size, r, c)) moves.push({ row: r, col: c });
-    }
-  }
-  return moves;
-}
-
-export function listValidEliminations(state, lastPlaces, size) {
-  const moves = [];
-  if (!lastPlaces) return moves;
-  const r0 = lastPlaces.row;
-  const c0 = lastPlaces.col;
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-      const r = r0 + dr;
-      const c = c0 + dc;
-      if (r < 0 || r >= size || c < 0 || c >= size) continue;
-      if (isValidElimination(state, lastPlaces, r, c)) moves.push({ row: r, col: c });
-    }
-  }
-  return moves;
-}
-
-function countAdjacent(state, size, row, col, player) {
-  let n = 0;
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-      const r = row + dr;
-      const c = col + dc;
-      if (r < 0 || r >= size || c < 0 || c >= size) continue;
-      if (state[r][c].player === player) n++;
-    }
-  }
-  return n;
-}
-
-// Pick from a candidate list using a primary score and an optional tiebreak.
-// Ties at the top are broken randomly so games vary between runs.
-function pickBest(candidates, scoreFn) {
-  if (candidates.length === 0) return null;
-  let best = -Infinity;
-  let pool = [];
-  for (const cand of candidates) {
-    const s = scoreFn(cand);
-    if (s > best) {
-      best = s;
-      pool = [cand];
-    } else if (s === best) {
-      pool.push(cand);
-    }
-  }
-  return pool[Math.floor(Math.random() * pool.length)];
-}
-
-function greedyPlace(state, size, currentPlayer) {
-  const moves = listValidPlacements(state, size);
-  return pickBest(moves, ({ row, col }) => {
-    const ns = applyPlace(state, currentPlayer, row, col);
-    const primary = getBiggestGroup(ns, size, currentPlayer);
-    const tiebreak = countAdjacent(state, size, row, col, currentPlayer);
-    return primary * 1000 + tiebreak;
-  });
-}
-
-function greedyEliminate(state, size, lastPlaces, currentPlayer) {
-  const opp = opponentOf(currentPlayer);
-  const moves = listValidEliminations(state, lastPlaces, size);
-  const oppBefore = getBiggestGroup(state, size, opp);
-  return pickBest(moves, ({ row, col }) => {
-    const ns = applyEliminate(state, row, col);
-    const oppAfter = getBiggestGroup(ns, size, opp);
-    return oppBefore - oppAfter;
-  });
-}
-
-function defensivePlace(state, size, currentPlayer) {
-  const opp = opponentOf(currentPlayer);
-  const moves = listValidPlacements(state, size);
-  if (moves.length === 0) return null;
-
-  // First move (no opponent dots yet): pick a center-biased cell so the opening
-  // isn't pathological. Score by negative distance from center.
-  const oppHasAny = state.some((row) => row.some((c) => c.player === opp));
-  if (!oppHasAny) {
-    const mid = (size - 1) / 2;
-    return pickBest(moves, ({ row, col }) => {
-      const dr = row - mid;
-      const dc = col - mid;
-      return -(dr * dr + dc * dc);
-    });
-  }
-
-  return pickBest(moves, ({ row, col }) => {
-    const oppAdj = countAdjacent(state, size, row, col, opp);
-    const ownAdj = countAdjacent(state, size, row, col, currentPlayer);
-    return oppAdj * 4 - ownAdj;
-  });
-}
-
-function defensiveEliminate(state, size, lastPlaces, currentPlayer) {
-  return greedyEliminate(state, size, lastPlaces, currentPlayer);
+function ensureWorker() {
+  if (worker) return worker;
+  worker = new AISearchWorker();
+  worker.onmessage = (e) => {
+    const { type, requestId, move, error } = e.data || {};
+    const p = pending.get(requestId);
+    if (!p) return; // stale (cancelled before reply)
+    pending.delete(requestId);
+    if (p.signal && p.onAbort) p.signal.removeEventListener('abort', p.onAbort);
+    if (type === 'result') p.resolve(move);
+    else if (type === 'error') p.reject(new Error(error || 'AI worker error'));
+    else p.resolve(null);
+  };
+  worker.onerror = (err) => {
+    const e = new Error(err.message || 'AI worker crashed');
+    for (const [, p] of pending) p.reject(e);
+    pending.clear();
+    worker.terminate();
+    worker = null;
+  };
+  return worker;
 }
 
 export function chooseAIMove({
-  algorithm,
-  state,
-  size,
-  phase,
-  lastPlaces,
-  currentPlayer
+  tier, state, size, phase, lastPlaces, currentPlayer, signal
 }) {
-  if (phase === 'place') {
-    if (algorithm === 'defensive') return defensivePlace(state, size, currentPlayer);
-    return greedyPlace(state, size, currentPlayer);
-  }
-  if (phase === 'eliminate') {
-    if (algorithm === 'defensive') return defensiveEliminate(state, size, lastPlaces, currentPlayer);
-    return greedyEliminate(state, size, lastPlaces, currentPlayer);
-  }
-  return null;
+  const cfg = AI_TIERS[tier];
+  if (!cfg) return Promise.resolve(null);
+  const w = ensureWorker();
+  const requestId = nextRequestId++;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      if (!pending.has(requestId)) return;
+      pending.delete(requestId);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+    pending.set(requestId, { resolve, reject, signal, onAbort });
+    w.postMessage({
+      type: 'search',
+      requestId,
+      tier,
+      state,
+      size,
+      phase,
+      lastPlaces,
+      currentPlayer
+    });
+  });
 }
+
+export function disposeAI() {
+  if (!worker) return;
+  worker.terminate();
+  worker = null;
+  for (const [, p] of pending) {
+    p.reject(new DOMException('Aborted', 'AbortError'));
+  }
+  pending.clear();
+}
+
+export { AI_TIERS, TIER_ORDER };

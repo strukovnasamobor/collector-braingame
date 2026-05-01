@@ -41,7 +41,7 @@ export function sanitizeRoomCode(raw) {
     .slice(0, ROOM_CODE_LENGTH);
 }
 
-export function clampGridSize(raw, fallback = 6) {
+export function clampGridSize(raw, fallback = 8) {
   const n = Number(raw);
   return ALLOWED_GRID_SIZES.includes(n) ? n : fallback;
 }

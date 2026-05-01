@@ -66,8 +66,11 @@
     "grid_size_label": "Veličina ploče",
     "timer_label": "Igra s mjeračem vremena (30s po potezu)",
     "ai_label": "AI",
-    "ai_algo_greedy": "Pohlepni",
-    "ai_algo_defensive": "Obrambeni",
+    "ai_tier_beginner": "Početnik",
+    "ai_tier_easy": "Lagano",
+    "ai_tier_medium": "Srednje",
+    "ai_tier_hard": "Teško",
+    "ai_tier_expert": "Stručnjak",
     "ai_thinking": "{player} razmišlja…",
     "start_button": "Započni Igru",
     "cancel_button": "Odustani",
@@ -157,6 +160,7 @@
     "ok_button": "U redu",
     "room_not_found": "Soba nije pronađena ili je igra već počela.",
     "enter_code": "Unesite kod sobe!",
-    "move_rejected": "Potez odbijen. Pokušajte ponovno."
+    "move_rejected": "Potez odbijen. Pokušajte ponovno.",
+    "times_up": "Vrijeme je isteklo!"
   }
 }

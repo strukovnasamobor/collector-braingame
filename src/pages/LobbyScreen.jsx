@@ -37,7 +37,7 @@ export default function LobbyScreen() {
   const { user, loading, signOut } = useAuth();
   const history = useHistory();
   const [mode, setMode] = useState(null); // null | 'casual' | 'ranked'
-  const [gridSize, setGridSize] = useState(6);
+  const [gridSize, setGridSize] = useState(8);
   const [timer, setTimer] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');

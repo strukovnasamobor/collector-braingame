@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 
 const ThemeContext = createContext(null);
-const STORAGE_KEY = 'sakupljac_theme';
+const STORAGE_KEY = 'collector-braingame_theme';
 
 function getSystemTheme() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {

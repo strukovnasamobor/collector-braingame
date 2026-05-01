@@ -66,8 +66,11 @@
     "grid_size_label": "Board Size",
     "timer_label": "Play with timer (30s per move)",
     "ai_label": "AI",
-    "ai_algo_greedy": "Greedy",
-    "ai_algo_defensive": "Defensive",
+    "ai_tier_beginner": "Beginner",
+    "ai_tier_easy": "Easy",
+    "ai_tier_medium": "Medium",
+    "ai_tier_hard": "Hard",
+    "ai_tier_expert": "Expert",
     "ai_thinking": "{player} is thinking…",
     "start_button": "Start Game",
     "cancel_button": "Cancel",
@@ -157,6 +160,7 @@
     "ok_button": "OK",
     "room_not_found": "Room not found or game has already started.",
     "enter_code": "Enter a room code!",
-    "move_rejected": "Move rejected. Please try again."
+    "move_rejected": "Move rejected. Please try again.",
+    "times_up": "Time's up!"
   }
 }

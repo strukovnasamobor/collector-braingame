@@ -10,7 +10,7 @@ function queueCollectionForMode(mode) {
     return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_casual';
 }
 
-export async function enqueueForMatch({ user, mode, gridSize = 6, timerEnabled = false }) {
+export async function enqueueForMatch({ user, mode, gridSize = 8, timerEnabled = false }) {
     return enqueueForMatchCall({ mode, gridSize, timerEnabled, userId: user?.uid });
 }
 

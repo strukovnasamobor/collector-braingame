@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { computeConnections, hasAdjacentFree, isValidElimination } from '../game/gameEngine';
+import { computeConnections, hasAdjacentFree, isValidElimination, isValidPlacement } from '../game/gameEngine';
 import { normalizeHistory } from '../utils/coordinateNormalization';
 
 const P1_COLOR = '#dc3545';
@@ -228,6 +228,9 @@ export default function GameBoard({
               !!(lastPlaces && i === lastPlaces.row && j === lastPlaces.col);
             const isValidEliminateNeighbour =
               showHint && phase === 'eliminate' && isValidElimination(state, lastPlaces, i, j);
+            const isValidPlaceTarget =
+              showHint && phase === 'place' && isValidPlacement(state, size, i, j);
+            const showHintGlow = isValidEliminateNeighbour || isValidPlaceTarget;
             const showAttention =
               showHint && isLastPlacedCell && cell.player !== null;
             const dotKey = showAttention
@@ -247,7 +250,7 @@ export default function GameBoard({
               'sk-cell',
               cell.eliminated ? 'eliminated' : '',
               blocked ? 'blocked' : '',
-              isValidEliminateNeighbour ? 'sk-cell--neighbour-glow' : ''
+              showHintGlow ? 'sk-cell--neighbour-glow' : ''
             ].filter(Boolean).join(' ');
             const dotClassName = [
               'sk-dot',
@@ -266,9 +269,12 @@ export default function GameBoard({
                 }}
                 onClick={() => {
                   if (blocked) {
-                    // Only flash the "wrong target" hint while we have a placed
-                    // dot to point at — i.e. the eliminate sub-phase.
-                    if (!disabled && phase === 'eliminate' && lastPlaces) {
+                    // Any tap on a non-playable cell while the board is interactive
+                    // triggers the "where you can play" hint:
+                    //   - eliminate phase -> glow valid eliminate neighbours
+                    //   - place phase     -> glow valid placement cells
+                    // Covers non-adjacent, occupied, eliminated, and isolated cells.
+                    if (!disabled) {
                       setInvalidNonce((n) => n + 1);
                     }
                     return;

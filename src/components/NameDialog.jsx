@@ -18,17 +18,18 @@ import {
 import { closeOutline, playOutline } from 'ionicons/icons';
 import { useI18n } from '../contexts/I18nContext';
 import { sanitizeDisplayName, DISPLAY_NAME_MAX } from '../utils/sanitize';
+import { TIER_ORDER } from '../game/aiTiers';
 
 export default function NameDialog({ open, onCancel, onStart }) {
   const { t } = useI18n();
   const [p1, setP1] = useState('');
   const [p2, setP2] = useState('');
-  const [size, setSize] = useState(6);
+  const [size, setSize] = useState(8);
   const [timer, setTimer] = useState(false);
   const [p1AI, setP1AI] = useState(false);
-  const [p1Algo, setP1Algo] = useState('greedy');
+  const [p1Algo, setP1Algo] = useState('medium');
   const [p2AI, setP2AI] = useState(false);
-  const [p2Algo, setP2Algo] = useState('greedy');
+  const [p2Algo, setP2Algo] = useState('medium');
   const [error, setError] = useState('');
 
   const handleStart = () => {
@@ -62,8 +63,11 @@ export default function NameDialog({ open, onCancel, onStart }) {
           <IonLabel position="stacked">{t('game.player1_name')}</IonLabel>
           {p1AI ? (
             <IonSelect value={p1Algo} onIonChange={(e) => setP1Algo(e.detail.value)}>
-              <IonSelectOption value="greedy">{t('game.ai_algo_greedy')}</IonSelectOption>
-              <IonSelectOption value="defensive">{t('game.ai_algo_defensive')}</IonSelectOption>
+              {TIER_ORDER.map((tier) => (
+                <IonSelectOption key={tier} value={tier}>
+                  {t(`game.ai_tier_${tier}`)}
+                </IonSelectOption>
+              ))}
             </IonSelect>
           ) : (
             <IonInput
@@ -86,8 +90,11 @@ export default function NameDialog({ open, onCancel, onStart }) {
           <IonLabel position="stacked">{t('game.player2_name')}</IonLabel>
           {p2AI ? (
             <IonSelect value={p2Algo} onIonChange={(e) => setP2Algo(e.detail.value)}>
-              <IonSelectOption value="greedy">{t('game.ai_algo_greedy')}</IonSelectOption>
-              <IonSelectOption value="defensive">{t('game.ai_algo_defensive')}</IonSelectOption>
+              {TIER_ORDER.map((tier) => (
+                <IonSelectOption key={tier} value={tier}>
+                  {t(`game.ai_tier_${tier}`)}
+                </IonSelectOption>
+              ))}
             </IonSelect>
           ) : (
             <IonInput

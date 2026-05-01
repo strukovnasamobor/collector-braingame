@@ -9,9 +9,9 @@ import {
   getBiggestGroup,
   LOCAL_MAX_TIMEOUTS
 } from '../game/gameEngine';
-import { chooseAIMove } from '../game/aiEngine';
+import { chooseAIMove, disposeAI } from '../game/aiEngine';
 
-const AI_MOVE_DELAY_MS = 450;
+const MIN_AI_VISIBLE_MS = 350;
 const aiAlgoForPlayer = (cfg, player) =>
   player === 1 ? cfg?.player1AI : cfg?.player2AI;
 
@@ -76,6 +76,7 @@ export function LocalGameProvider({ children }) {
     setHistory(emptyHistory());
     setTimeouts({ 1: 0, 2: 0 });
     setResult(null);
+    disposeAI();
   }, []);
 
   const finalize = useCallback(
@@ -158,19 +159,39 @@ export function LocalGameProvider({ children }) {
 
   useEffect(() => {
     if (!config || result) return undefined;
-    const algo = aiAlgoForPlayer(config, currentPlayer);
-    if (!algo) return undefined;
-    const move = chooseAIMove({
-      algorithm: algo,
-      state,
-      size: config.gridSize,
-      phase,
-      lastPlaces,
-      currentPlayer
-    });
-    if (!move) return undefined;
-    const id = setTimeout(() => placeDot(move.row, move.col), AI_MOVE_DELAY_MS);
-    return () => clearTimeout(id);
+    const tier = aiAlgoForPlayer(config, currentPlayer);
+    if (!tier) return undefined;
+
+    const ac = new AbortController();
+    let cancelled = false;
+    const t0 = performance.now();
+
+    (async () => {
+      try {
+        const move = await chooseAIMove({
+          tier,
+          state,
+          size: config.gridSize,
+          phase,
+          lastPlaces,
+          currentPlayer,
+          signal: ac.signal
+        });
+        if (cancelled || !move) return;
+        const elapsed = performance.now() - t0;
+        const wait = Math.max(0, MIN_AI_VISIBLE_MS - elapsed);
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        if (cancelled) return;
+        placeDot(move.row, move.col);
+      } catch (e) {
+        if (e?.name !== 'AbortError') console.warn('AI search failed', e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
   }, [config, result, currentPlayer, phase, lastPlaces, state, placeDot]);
 
   const scores = useMemo(() => {

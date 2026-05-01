@@ -8,6 +8,7 @@ import {
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
 import MilestoneCelebration from '../components/MilestoneCelebration';
+import TimesUpFlash from '../components/TimesUpFlash';
 import { useI18n } from '../contexts/I18nContext';
 import { useLocalGame } from '../contexts/LocalGameContext';
 import { useGameTimer } from '../hooks/useGameTimer';
@@ -85,31 +86,41 @@ export default function OfflineGamePage() {
       ? t('game.phase_place', { player: name })
       : t('game.phase_eliminate', { player: name });
   const statusColor = currentPlayer === 1 ? '#dc3545' : '#007bff';
-  const gameOverColor = result
-    ? result.winner === 1
-      ? '#dc3545'
-      : result.winner === 2
-        ? '#007bff'
-        : undefined
-    : undefined;
+
+  const renderWinnerLine = (winnerName, winnerNumber) => {
+    const winnerColor = winnerNumber === 1 ? '#dc3545' : '#007bff';
+    // Use a sentinel string that won't appear in any translated form.
+    const SENTINEL = 'PLAYER';
+    const template = t('game.game_over_winner', { player: SENTINEL });
+    const [before, after] = template.split(SENTINEL);
+    return (
+      <>
+        {before}
+        <span className="sk-winner-name" style={{ color: winnerColor }}>{winnerName}</span>
+        {after}
+      </>
+    );
+  };
 
   const buildGameOverMessage = () => {
-    if (!result) return '';
+    if (!result) return null;
     const { winner, timeout, loser } = result;
-    const { p1 } = { p1: config.player1Name };
+    const p1 = config.player1Name;
     const p2 = config.player2Name;
     if (timeout) {
       const loserName = loser === 1 ? p1 : p2;
       const winnerName = winner === 1 ? p1 : p2;
       return (
-        t('game.timeout_loss', { player: loserName }) +
-        '\n' +
-        t('game.game_over_winner', { player: winnerName })
+        <>
+          {t('game.timeout_loss', { player: loserName })}
+          {'\n'}
+          {renderWinnerLine(winnerName, winner)}
+        </>
       );
     }
     if (winner === 0) return t('game.game_over_draw');
     const winnerName = winner === 1 ? p1 : p2;
-    return t('game.game_over_winner', { player: winnerName });
+    return renderWinnerLine(winnerName, winner);
   };
 
   return (
@@ -143,13 +154,18 @@ export default function OfflineGamePage() {
           />
 
           {config.timerEnabled && isActive && (
-            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>{seconds}</div>
+            <div
+              className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}
+              style={seconds <= 10 ? { color: currentPlayer === 1 ? '#dc3545' : '#007bff' } : undefined}
+            >
+              {seconds}
+            </div>
           )}
 
           {result ? (
             <div
               className="sk-status sk-status--game-over"
-              style={{ color: gameOverColor, whiteSpace: 'pre-line' }}
+              style={{ whiteSpace: 'pre-line' }}
             >
               <div className="sk-game-over-title">{t('game.game_over_title')}</div>
               <div className="sk-game-over-message">{buildGameOverMessage()}</div>
@@ -177,6 +193,11 @@ export default function OfflineGamePage() {
         </div>
 
         <MilestoneCelebration event={milestoneEvent} onDone={dismissMilestone} />
+        <TimesUpFlash
+          seconds={seconds}
+          currentPlayer={currentPlayer}
+          active={!!config && !!config.timerEnabled && isActive}
+        />
       </IonContent>
     </IonPage>
   );

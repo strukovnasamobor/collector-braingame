@@ -4,11 +4,13 @@ import {
   IonPage,
   IonContent,
   IonAlert,
-  IonSpinner
+  IonSpinner,
+  IonicSafeString
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
 import GameBoard from '../components/GameBoard';
 import MilestoneCelebration from '../components/MilestoneCelebration';
+import TimesUpFlash from '../components/TimesUpFlash';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useOnlineGame } from '../hooks/useOnlineGame';
@@ -136,31 +138,59 @@ export default function OnlineGamePage() {
       finalResult;
     const p1 = data.player1name;
     const p2 = data.player2name;
+    const escapeHtml = (s) => String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+    // Inline animation styles must be in the rendered HTML because the alert
+    // lives inside Ionic's shadow DOM where global @keyframes can't reach.
+    const animStyle =
+      'display:inline-block;font-weight:900;' +
+      'animation:sk-winner-pulse-alert 900ms ease-in-out infinite;';
+    const winnerSpan = (name, num) => {
+      const color = num === 1 ? '#dc3545' : '#007bff';
+      return `<span style="${animStyle}color:${color}">${escapeHtml(name)}</span>`;
+    };
+    const keyframesStyle =
+      '<style>@keyframes sk-winner-pulse-alert{' +
+      '0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}</style>';
+    const winnerLine = (name, num) => {
+      const SENTINEL = '__WINNER__';
+      const tpl = t('game.game_over_winner', { player: SENTINEL });
+      return escapeHtml(tpl).replace(SENTINEL, winnerSpan(name, num));
+    };
     const ratingLine =
       delta1 != null && delta2 != null
         ? '\n' +
-        t('game.rating_change', {
-          p1,
-          d1: formatDelta(delta1),
-          r1: newR1,
-          p2,
-          d2: formatDelta(delta2),
-          r2: newR2
-        })
+        escapeHtml(
+          t('game.rating_change', {
+            p1,
+            d1: formatDelta(delta1),
+            r1: newR1,
+            p2,
+            d2: formatDelta(delta2),
+            r2: newR2
+          })
+        )
         : '';
+    let html;
     if (timeout) {
       const loserName = loser === 1 ? p1 : p2;
       const winnerName = winner === 1 ? p1 : p2;
-      return (
-        t('game.timeout_loss', { player: loserName }) +
+      html =
+        escapeHtml(t('game.timeout_loss', { player: loserName })) +
         '\n' +
-        t('game.game_over_winner', { player: winnerName }) +
-        ratingLine
-      );
+        winnerLine(winnerName, winner) +
+        ratingLine;
+    } else if (winner === 0) {
+      html = escapeHtml(t('game.game_over_draw')) + ratingLine;
+    } else {
+      const winnerName = winner === 1 ? p1 : p2;
+      html = winnerLine(winnerName, winner) + ratingLine;
     }
-    if (winner === 0) return t('game.game_over_draw') + ratingLine;
-    const winnerName = winner === 1 ? p1 : p2;
-    return t('game.game_over_winner', { player: winnerName }) + ratingLine;
+    return new IonicSafeString(keyframesStyle + html);
   }, [finalResult, data, t]);
 
   if (!data) {
@@ -219,7 +249,10 @@ export default function OnlineGamePage() {
           />
 
           {data.timerEnabled && data.status === 'active' && (
-            <div className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}>
+            <div
+              className={`sk-turn-timer${seconds <= 10 ? ' warning' : ''}`}
+              style={seconds <= 10 ? { color: currentPlayer === 1 ? '#dc3545' : '#007bff' } : undefined}
+            >
               {seconds}
             </div>
           )}
@@ -230,6 +263,11 @@ export default function OnlineGamePage() {
         </div>
 
         <MilestoneCelebration event={milestoneEvent} onDone={dismissMilestone} />
+        <TimesUpFlash
+          seconds={seconds}
+          currentPlayer={currentPlayer}
+          active={!!data && data.status === 'active' && !!data.timerEnabled}
+        />
 
         <IonAlert
           isOpen={!!alertError && !opponentLeftOpen}

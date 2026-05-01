@@ -217,6 +217,63 @@ body.dark .sk-turn-timer {
   color: #ffffff;
 }
 
+/* Last 10 seconds: pulsate and recolor in the active player's tint
+ * (red for P1, blue for P2). The inline `color` from the page wins. */
+.sk-turn-timer.warning {
+  animation: sk-timer-warning-pulse 700ms ease-in-out infinite;
+  font-weight: 900;
+}
+
+@keyframes sk-timer-warning-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.28); }
+}
+
+/* Big "TIME'S UP!" overlay shown when the timer hits 0. Colored by whoever
+ * just ran out of time. Auto-dismissed by the React component after ~1.5s. */
+.sk-times-up-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+.sk-times-up-text {
+  font-size: 9vh;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  animation: sk-times-up-pop 1500ms ease-out forwards;
+}
+
+@keyframes sk-times-up-pop {
+  0%   { opacity: 0; transform: scale(0.45); }
+  18%  { opacity: 1; transform: scale(1.18); }
+  35%  { transform: scale(0.94); }
+  55%  { transform: scale(1.06); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* Game-over winner name: tinted in the winner's player color and pulsing
+ * to draw attention. The surrounding "Game Over" / "wins!" text stays in
+ * the page's default theme color. */
+.sk-winner-name {
+  display: inline-block;
+  font-weight: 900;
+  animation: sk-winner-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes sk-winner-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
+}
+
 .sk-grid-wrapper {
   display: flex;
   justify-content: center;
