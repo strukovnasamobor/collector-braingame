@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import {
   IonPage,
@@ -77,6 +77,15 @@ export default function OfflineGamePage() {
     onTimeout
   });
 
+  // Pulse the turn-status text when the player taps the board while it isn't
+  // theirs (e.g., AI thinking) — keyed so React remounts and the CSS animation
+  // restarts on each tap.
+  const [statusPulseKey, setStatusPulseKey] = useState(0);
+  const handleDisabledClick = useCallback(() => {
+    if (!isActive) return;
+    setStatusPulseKey((k) => k + 1);
+  }, [isActive]);
+
   if (!config) return null;
 
   const name = currentPlayer === 1 ? config.player1Name : config.player2Name;
@@ -89,16 +98,11 @@ export default function OfflineGamePage() {
 
   const renderWinnerLine = (winnerName, winnerNumber) => {
     const winnerColor = winnerNumber === 1 ? '#dc3545' : '#007bff';
-    // Use a sentinel string that won't appear in any translated form.
-    const SENTINEL = 'PLAYER';
-    const template = t('game.game_over_winner', { player: SENTINEL });
-    const [before, after] = template.split(SENTINEL);
+    // Whole "{name} wins!" string pulses in the winner's color.
     return (
-      <>
-        {before}
-        <span className="sk-winner-name" style={{ color: winnerColor }}>{winnerName}</span>
-        {after}
-      </>
+      <span className="sk-winner-name" style={{ color: winnerColor }}>
+        {t('game.game_over_winner', { player: winnerName })}
+      </span>
     );
   };
 
@@ -148,6 +152,7 @@ export default function OfflineGamePage() {
             size={config.gridSize}
             history={placementHistory}
             onCellClick={placeDot}
+            onDisabledClick={handleDisabledClick}
             disabled={!isActive || isAITurn}
             phase={phase}
             lastPlaces={lastPlaces}
@@ -186,7 +191,11 @@ export default function OfflineGamePage() {
               </div>
             </div>
           ) : (
-            <div className="sk-status" style={{ color: statusColor }}>
+            <div
+              key={`status-${statusPulseKey}`}
+              className={`sk-status${statusPulseKey > 0 ? ' sk-status--pulse' : ''}`}
+              style={{ color: statusColor }}
+            >
               {isActive ? statusText : ''}
             </div>
           )}

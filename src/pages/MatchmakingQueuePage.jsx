@@ -41,7 +41,6 @@ export default function MatchmakingQueuePage() {
     );
 
     const casualGridSize = clampGridSize(query.get('gridSize'));
-    const casualTimerEnabled = query.get('timer') === '1';
 
     useEffect(() => {
         if (!loading && !user) history.replace('/online/auth');
@@ -86,7 +85,8 @@ export default function MatchmakingQueuePage() {
                     user,
                     mode: safeMode,
                     gridSize: isRanked ? 8 : casualGridSize,
-                    timerEnabled: isRanked ? true : casualTimerEnabled
+                    // Online games (both ranked and casual) always run with the timer.
+                    timerEnabled: true
                 });
 
                 unsubscribe = listenForMatch(user.uid, safeMode, async (queueEntry) => {
@@ -142,7 +142,6 @@ export default function MatchmakingQueuePage() {
         user,
         safeMode,
         casualGridSize,
-        casualTimerEnabled,
         history,
         t
     ]);

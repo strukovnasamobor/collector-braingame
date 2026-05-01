@@ -25,16 +25,23 @@ export default function NameDialog({ open, onCancel, onStart }) {
   const [p1, setP1] = useState('');
   const [p2, setP2] = useState('');
   const [size, setSize] = useState(8);
-  const [timer, setTimer] = useState(false);
+  const [timer, setTimer] = useState(true);
   const [p1AI, setP1AI] = useState(false);
   const [p1Algo, setP1Algo] = useState('medium');
   const [p2AI, setP2AI] = useState(false);
   const [p2Algo, setP2Algo] = useState('medium');
   const [error, setError] = useState('');
 
+  const aiPlayerName = (algo) =>
+    t('game.ai_player_name', { tier: t(`game.ai_tier_${algo}`) });
+
   const handleStart = () => {
-    const p1t = sanitizeDisplayName(p1) || 'Player 1';
-    const p2t = sanitizeDisplayName(p2) || 'Player 2';
+    const p1t = p1AI
+      ? aiPlayerName(p1Algo)
+      : sanitizeDisplayName(p1) || 'Player 1';
+    const p2t = p2AI
+      ? aiPlayerName(p2Algo)
+      : sanitizeDisplayName(p2) || 'Player 2';
     setError('');
     onStart({
       player1Name: p1t,

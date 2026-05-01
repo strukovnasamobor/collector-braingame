@@ -48,6 +48,7 @@ export default function GameBoard({
   history,
   animationHistory,
   onCellClick,
+  onDisabledClick,
   disabled,
   phase,
   lastPlaces
@@ -269,12 +270,16 @@ export default function GameBoard({
                 }}
                 onClick={() => {
                   if (blocked) {
-                    // Any tap on a non-playable cell while the board is interactive
-                    // triggers the "where you can play" hint:
-                    //   - eliminate phase -> glow valid eliminate neighbours
-                    //   - place phase     -> glow valid placement cells
-                    // Covers non-adjacent, occupied, eliminated, and isolated cells.
-                    if (!disabled) {
+                    if (disabled) {
+                      // Board is locked (opponent's / AI's turn or game over) — let
+                      // the page pulse the status text so the player notices.
+                      onDisabledClick && onDisabledClick();
+                    } else {
+                      // Any tap on a non-playable cell while the board is interactive
+                      // triggers the "where you can play" hint:
+                      //   - eliminate phase -> glow valid eliminate neighbours
+                      //   - place phase     -> glow valid placement cells
+                      // Covers non-adjacent, occupied, eliminated, and isolated cells.
                       setInvalidNonce((n) => n + 1);
                     }
                     return;

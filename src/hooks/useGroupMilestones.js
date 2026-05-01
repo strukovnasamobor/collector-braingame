@@ -1,27 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const WORDS_12 = [
-  'Good', 'Nice', 'Solid', 'Great', 'Excellent', 'Wonderful', 'Awesome',
-  'Fabulous', 'Amazing', 'Brilliant', 'Terrific', 'Fantastic', 'Marvelous',
+  'Good', 'Nice', 'Great', 'Excellent', 'Wonderful', 'Awesome',
+  'Fabulous', 'Amazing', 'Brilliant', 'Fantastic', 'Marvelous',
   'Outstanding', 'Superb', 'Stunning', 'Incredible', 'Spectacular',
-  'Extraordinary', 'Phenomenal', 'Magnificent', 'Breathtaking', 'Astonishing',
-  'Mind-blowing', 'Unbelievable', 'Sublime', 'COLLECTOR'
+  'Extraordinary', 'Phenomenal', 'Magnificent', 'Breathtaking',
+  'Astonishing', 'Mind-blowing', 'Unbelievable', 'Sublime', 'COLLECTOR'
 ];
 
 const WORDS_10 = [
-  'Good', 'Nice', 'Solid', 'Great', 'Excellent', 'Wonderful', 'Awesome',
-  'Fabulous', 'Amazing', 'Brilliant', 'Terrific', 'Fantastic', 'Marvelous',
-  'Outstanding', 'Superb', 'Stunning', 'Incredible', 'Spectacular', 'COLLECTOR'
+  'Good', 'Nice', 'Great', 'Excellent', 'Wonderful', 'Awesome',
+  'Fabulous', 'Amazing', 'Brilliant', 'Fantastic', 'Marvelous',
+  'Outstanding', 'Superb', 'Stunning', 'Incredible', 'Spectacular'
 ];
 
 const WORDS_8 = [
-  'Good', 'Nice', 'Solid', 'Great', 'Excellent', 'Wonderful', 'Awesome',
-  'Fabulous', 'Amazing', 'Brilliant', 'Terrific', 'COLLECTOR'
+  'Good', 'Nice', 'Great', 'Excellent', 'Wonderful', 'Awesome',
+  'Fabulous', 'Amazing', 'Brilliant'
 ];
 
-const WORDS_6 = [
-  'Good', 'Nice', 'Solid', 'Great', 'Excellent', 'Wonderful', 'Awesome'
-];
+const WORDS_6 = ['Good', 'Nice', 'Great', 'Excellent'];
 
 function buildMap(start, words) {
   const map = {};
@@ -30,10 +28,10 @@ function buildMap(start, words) {
 }
 
 export const MILESTONES_BY_SIZE = {
-  6: buildMap(2, WORDS_6),
-  8: buildMap(4, WORDS_8),
-  10: buildMap(6, WORDS_10),
-  12: buildMap(8, WORDS_12)
+  6: buildMap(6, WORDS_6),     // levels 6..9
+  8: buildMap(8, WORDS_8),     // levels 8..16
+  10: buildMap(10, WORDS_10),  // levels 10..25
+  12: buildMap(12, WORDS_12)   // levels 12..36
 };
 
 function getMilestonesFor(gridSize) {

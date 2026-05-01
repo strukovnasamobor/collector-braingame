@@ -72,6 +72,7 @@
     "ai_tier_hard": "Hard",
     "ai_tier_expert": "Expert",
     "ai_thinking": "{player} is thinking…",
+    "ai_player_name": "{tier} AI",
     "start_button": "Start Game",
     "cancel_button": "Cancel",
     "game_over_title": "Game Over!",

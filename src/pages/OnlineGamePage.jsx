@@ -114,6 +114,15 @@ export default function OnlineGamePage() {
     onTimeout
   });
 
+  // Pulse the turn-status text when the player taps the board while it's the
+  // opponent's turn (or the game has ended). Keyed so the CSS animation
+  // restarts on each tap.
+  const [statusPulseKey, setStatusPulseKey] = useState(0);
+  const handleDisabledClick = useCallback(() => {
+    if (!data || data.status !== 'active') return;
+    setStatusPulseKey((k) => k + 1);
+  }, [data]);
+
   const handleQuit = useCallback(() => {
     // Navigate first so the page unmounts before the Firestore snapshot of the
     // finished/left game can trigger the Game Over alert. The leave request
@@ -149,17 +158,14 @@ export default function OnlineGamePage() {
     const animStyle =
       'display:inline-block;font-weight:900;' +
       'animation:sk-winner-pulse-alert 900ms ease-in-out infinite;';
-    const winnerSpan = (name, num) => {
-      const color = num === 1 ? '#dc3545' : '#007bff';
-      return `<span style="${animStyle}color:${color}">${escapeHtml(name)}</span>`;
-    };
     const keyframesStyle =
       '<style>@keyframes sk-winner-pulse-alert{' +
       '0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}</style>';
+    // Whole "{name} wins!" line pulses in the winner's color.
     const winnerLine = (name, num) => {
-      const SENTINEL = '__WINNER__';
-      const tpl = t('game.game_over_winner', { player: SENTINEL });
-      return escapeHtml(tpl).replace(SENTINEL, winnerSpan(name, num));
+      const color = num === 1 ? '#dc3545' : '#007bff';
+      const text = t('game.game_over_winner', { player: name });
+      return `<span style="${animStyle}color:${color}">${escapeHtml(text)}</span>`;
     };
     const ratingLine =
       delta1 != null && delta2 != null
@@ -243,6 +249,7 @@ export default function OnlineGamePage() {
             history={placementHistory}
             animationHistory={serverHistory}
             onCellClick={placeDot}
+            onDisabledClick={handleDisabledClick}
             disabled={!isMyTurn || data.status !== 'active'}
             phase={phase}
             lastPlaces={lastPlaces}
@@ -257,7 +264,11 @@ export default function OnlineGamePage() {
             </div>
           )}
 
-          <div className="sk-status" style={{ color: statusColor }}>
+          <div
+            key={`status-${statusPulseKey}`}
+            className={`sk-status${statusPulseKey > 0 ? ' sk-status--pulse' : ''}`}
+            style={{ color: statusColor }}
+          >
             {data.status === 'active' ? statusText : ''}
           </div>
         </div>

@@ -8,8 +8,7 @@ import {
   IonItem,
   IonLabel,
   IonSelect,
-  IonSelectOption,
-  IonCheckbox
+  IonSelectOption
 } from '@ionic/react';
 import {
   gameControllerOutline,
@@ -38,7 +37,6 @@ export default function LobbyScreen() {
   const history = useHistory();
   const [mode, setMode] = useState(null); // null | 'casual' | 'ranked'
   const [gridSize, setGridSize] = useState(8);
-  const [timer, setTimer] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [showEmail, setShowEmail] = useState(false);
@@ -62,13 +60,13 @@ export default function LobbyScreen() {
 
   const handleCreateCasualRoom = async () => {
     const size = gridSize;
-    const timerEnabled = timer;
     const code = generateGameCode();
 
     setCreating(true);
     setError('');
     try {
-      await createCasualRoom({ code, gridSize: size, timerEnabled });
+      // Online games always have the per-turn timer.
+      await createCasualRoom({ code, gridSize: size, timerEnabled: true });
       history.push(`/online/waiting/${code}`);
     } catch (e) {
       setError(e.message);
@@ -78,10 +76,9 @@ export default function LobbyScreen() {
   };
 
   const handleFindMatch = () => {
-    const params =
-      mode === 'casual'
-        ? `?gridSize=${gridSize}&timer=${timer ? 1 : 0}`
-        : '';
+    // Online matches always have the per-turn timer; only board size needs
+    // to be carried over for casual matchmaking.
+    const params = mode === 'casual' ? `?gridSize=${gridSize}` : '';
     history.push(`/online/matchmaking/${mode}${params}`);
   };
 
@@ -151,14 +148,6 @@ export default function LobbyScreen() {
                     </IonSelectOption>
                   ))}
                 </IonSelect>
-              </IonItem>
-              <IonItem>
-                <IonCheckbox
-                  checked={timer}
-                  onIonChange={(e) => setTimer(e.detail.checked)}
-                  slot="start"
-                />
-                <IonLabel>{t('lobby.timer_label')}</IonLabel>
               </IonItem>
               {error && (
                 <p style={{ color: '#dc3545', marginTop: 12 }}>{error}</p>

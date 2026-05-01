@@ -274,6 +274,18 @@ body.dark .sk-turn-timer {
   50%      { transform: scale(1.18); }
 }
 
+/* Quick reminder pulse on the turn-status text when the player taps the
+ * board while it isn't their turn. One-shot, restarts via React `key`. */
+.sk-status--pulse {
+  animation: sk-status-pulse 700ms ease-in-out;
+}
+
+@keyframes sk-status-pulse {
+  0%, 100% { transform: scale(1); }
+  35%      { transform: scale(1.18); }
+  70%      { transform: scale(0.98); }
+}
+
 .sk-grid-wrapper {
   display: flex;
   justify-content: center;

@@ -72,6 +72,7 @@
     "ai_tier_hard": "Teško",
     "ai_tier_expert": "Stručnjak",
     "ai_thinking": "{player} razmišlja…",
+    "ai_player_name": "{tier} AI",
     "start_button": "Započni Igru",
     "cancel_button": "Odustani",
     "game_over_title": "Kraj Igre!",

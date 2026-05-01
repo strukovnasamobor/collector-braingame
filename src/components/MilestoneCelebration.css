@@ -38,36 +38,6 @@
   line-height: 1;
 }
 
-.sk-milestone-tagline {
-  font-size: 2.4vh;
-  font-weight: 700;
-  opacity: 0.9;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  line-height: 1;
-}
-
-.sk-milestone-stack--max {
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4em;
-  padding: 16px 32px;
-  animation-duration: 3500ms;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 24px currentColor;
-}
-
-.sk-milestone-stack--max .sk-milestone-word {
-  font-size: 8vh;
-}
-
-.sk-milestone-stack--max .sk-milestone-count {
-  font-size: 3vh;
-}
-
-.sk-milestone-stack--max .sk-milestone-tagline {
-  font-size: 3vh;
-}
-
 @keyframes sk-milestone-pop {
   0% {
     opacity: 0;

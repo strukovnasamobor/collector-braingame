@@ -49,18 +49,21 @@ function noteAt(degree) {
   return SCALE[degree];
 }
 
-// Each motif is a list of scale-degree offsets from a base; varied so consecutive
-// milestones don't sound identical. Cycles through the array as level grows.
-const MOTIFS = [
-  [0, 4],          // tonic + perfect fifth (open)
-  [0, 2, 4],       // major triad ascending
-  [4, 2, 7],       // sol → mi → octave (gentle rise)
-  [0, 4, 2, 7],    // do-sol-mi-do' (cascade with octave)
-  [2, 0, 4],       // mi-do-sol (zigzag)
-  [0, 7, 4],       // do-do'-sol (octave drop)
-  [4, 0, 7],       // sol-do-do' (cadence)
-  [0, 2, 4, 7]     // tonic-3rd-5th-octave (full arpeggio)
-];
+// Tier-keyed motifs: each tier has its own bell-note pattern so the player
+// hears the same boundaries that the confetti uses (1-burst, 2-burst, 3-burst).
+// Within a tier the base pitch climbs by one scale step per degree, so every
+// word still sounds distinct.
+const MOTIF_BY_TIER = {
+  1: [0, 4],          // tonic + perfect 5th (light, 2 notes)
+  2: [0, 2, 4],       // major triad ascending (medium, 3 notes)
+  3: [0, 2, 4, 7]     // root-3rd-5th-octave full arpeggio (rich, 4 notes)
+};
+
+function tierFor(degree) {
+  if (degree >= 19) return 3;
+  if (degree >= 10) return 2;
+  return 1;
+}
 
 // Bell-like additive synthesis: stack sine harmonics with their own envelopes
 // so high partials decay faster than the fundamental — chime/glockenspiel feel.
@@ -180,15 +183,14 @@ function playChime(event) {
     return;
   }
 
-  // Per-word variety: motif cycles, base pitch climbs the scale with the word
-  // degree (the milestone's position in the word list, stable across grid sizes).
-  // The same word ("Great", "Awesome", etc.) sounds the same on a 6×6 board as
-  // on a 12×12 board, regardless of how many dots back it.
+  // Tier-keyed motif so the chime "expands" at each tier boundary (2 → 3 → 4
+  // notes), and pitch climbs one scale step per degree so every word inside a
+  // tier is still distinguishable. Word→degree mapping is stable across boards
+  // (e.g., "Wonderful" is degree 5 on every grid size that has it), so the same
+  // word always sounds the same regardless of board.
   const degree = Math.max(1, event.degree || 1);
-  const motif = MOTIFS[(degree - 1) % MOTIFS.length];
-  // Base scale position: starts around F4 for degree 1 ("Good") and walks up
-  // two scale steps per degree. Capped so we don't run off the high end.
-  const baseDegree = Math.min(SCALE.length - 8, 6 + degree * 2);
+  const motif = MOTIF_BY_TIER[tierFor(degree)];
+  const baseDegree = Math.max(0, Math.min(SCALE.length - 8, 4 + degree));
 
   let cursor = startBase;
   motif.forEach((offset, i) => {
@@ -202,18 +204,18 @@ function playChime(event) {
 }
 
 // Maps a word's degree (1-indexed position in the milestone list) to the exact
-// burst-count + particles-per-burst pair the celebration should fire. Tiered
-// so each new burst level resets to a smaller particle count, then climbs.
-//   1-7   (Good..Awesome)     -> 1 burst,  10..70 particles
-//   8-11  (Fabulous..Terrific) -> 2 bursts, 40..70 particles each
-//   12-18 (Fantastic..Spectacular) -> 3 bursts, 50..110 each
-//   19-26 (Extraordinary..Sublime) -> 4 bursts, 80..150 each
-//   27+   (THE COLLECTOR)     -> 5 bursts, 200 each
+// burst-count + particles-per-burst pair, per the user-supplied table:
+//   1-9   (Good..Brilliant)            -> 1 burst, degree*10 (10..90)
+//   10-18 (Fantastic..Phenomenal)      -> 2 bursts, lookup [50,60,70,80,90,100,110,120,140]
+//                                        (note the +20 jump at degree 18)
+//   19-24 (Magnificent..Sublime)       -> 3 bursts, (degree-9)*10 (100..150)
+//   25    (THE COLLECTOR, only on 12×12) -> 5 bursts, 200
+const TIER2_PARTICLES = [50, 60, 70, 80, 90, 100, 110, 120, 140];
+
 function celebrationParams(degree) {
-  if (degree >= 27) return { burstCount: 5, particlesPerBurst: 200 };
-  if (degree >= 19) return { burstCount: 4, particlesPerBurst: (degree - 11) * 10 };
-  if (degree >= 12) return { burstCount: 3, particlesPerBurst: (degree - 7) * 10 };
-  if (degree >= 8) return { burstCount: 2, particlesPerBurst: (degree - 4) * 10 };
+  if (degree >= 25) return { burstCount: 5, particlesPerBurst: 200 };
+  if (degree >= 19) return { burstCount: 3, particlesPerBurst: (degree - 9) * 10 };
+  if (degree >= 10) return { burstCount: 2, particlesPerBurst: TIER2_PARTICLES[degree - 10] };
   return { burstCount: 1, particlesPerBurst: Math.max(10, degree * 10) };
 }
 
@@ -275,22 +277,17 @@ export default function MilestoneCelebration({ event, onDone }) {
   if (!event) return null;
 
   const color = PLAYER_COLOR[event.player] || PLAYER_COLOR[1];
-  const stackClass = `sk-milestone-stack${event.isMax ? ' sk-milestone-stack--max' : ''}`;
+  const wordLabel = event.isMax ? 'THE COLLECTOR' : event.word;
 
   return (
     <div className="sk-milestone-overlay" aria-live="polite">
-      <div key={event.id} className={stackClass} style={{ color, borderColor: color }}>
-        {event.isMax ? (
-          <>
-            <div className="sk-milestone-tagline">One of a kind</div>
-            <div className="sk-milestone-word">THE COLLECTOR</div>
-          </>
-        ) : (
-          <>
-            <div className="sk-milestone-word">{event.word}</div>
-            <div className="sk-milestone-count">{event.level} dots collected</div>
-          </>
-        )}
+      <div
+        key={event.id}
+        className="sk-milestone-stack"
+        style={{ color, borderColor: color }}
+      >
+        <div className="sk-milestone-word">{wordLabel}</div>
+        <div className="sk-milestone-count">{event.level} dots collected</div>
       </div>
     </div>
   );
