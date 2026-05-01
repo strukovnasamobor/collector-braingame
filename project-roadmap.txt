@@ -1,9 +1,6 @@
 - better AI
 ? online AI or/and offline AI
 
-- test online game
-- show msg, confetti and sound check
-
 Ver. 1.0 (1)
 - remove printing logs
 - deploy and make TWA with PWA Web Builder

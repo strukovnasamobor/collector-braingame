@@ -160,38 +160,60 @@ export function useOnlineGame(gameId) {
   // Single per-turn timer: only resets when the active player flips, not on phase transition.
   const turnKey = data ? `${currentPlayer}` : '';
 
-  // Reconcile: drop pending moves the server has confirmed.
+  // Reconcile + invalidate in one pass. Two distinct cases the server snapshot
+  // can imply for our optimistic queue:
+  //   (a) Server confirmed one of our moves -> drop it from the queue. Silent.
+  //   (b) Server's new state makes a *remaining* pending move impossible
+  //       (e.g., the opponent eliminated the cell we were trying to place on)
+  //       -> drop the tail and surface "Move rejected".
+  // Doing these in two separate effects races: when our own eliminate is
+  // confirmed, the snapshot also marks the cell eliminated, so the validity
+  // walk briefly reports the queued eliminate as "invalid" before the
+  // reconciliation pass has a chance to drop it. Combining them ordering-first
+  // means we only flag a true rejection.
   useEffect(() => {
     if (pendingMoves.length === 0 || !data) return;
     if (data.status !== 'active') {
       setPendingMoves([]);
       return;
     }
+
     const serverPlacementCount =
       (data.placementHistory?.p1?.length || 0) +
       (data.placementHistory?.p2?.length || 0);
-    setPendingMoves((prev) => {
-      const next = prev.filter((m) => {
-        if (m.kind === 'place') {
-          return serverPlacementCount < m.baselinePlacementCount;
-        }
-        // Eliminate is confirmed once the server flips currentPlayer to the opponent.
-        return data.currentPlayer === m.playerNumber;
-      });
-      return next.length === prev.length ? prev : next;
-    });
-  }, [data, pendingMoves.length]);
 
-  // If the latest server snapshot invalidated any pending optimistic move
-  // (e.g., opponent eliminated the cell we were trying to place on), drop
-  // those moves and surface an error. Without this, the queue would stay full
-  // (capped at 2) and block further clicks until the server's eventual 412.
-  useEffect(() => {
-    if (pendingMoves.length === 0) return;
-    if (validPendingCount === pendingMoves.length) return;
-    setPendingMoves((prev) => prev.slice(0, validPendingCount));
-    setLocalError('notifications.move_rejected');
-  }, [pendingMoves, validPendingCount]);
+    // Step 1: drop server-confirmed moves.
+    const remaining = pendingMoves.filter((m) => {
+      if (m.kind === 'place') {
+        return serverPlacementCount < m.baselinePlacementCount;
+      }
+      return data.currentPlayer === m.playerNumber;
+    });
+
+    // Step 2: walk what's left against the new server state. Anything that
+    // still can't apply was genuinely invalidated by the server.
+    let validCount = 0;
+    if (serverState.length > 0) {
+      let s = serverState;
+      for (const m of remaining) {
+        const cell = s[m.row]?.[m.col];
+        if (!cell || cell.eliminated || cell.player !== null) break;
+        s = m.kind === 'place'
+          ? applyPlace(s, m.playerNumber, m.row, m.col)
+          : applyEliminate(s, m.row, m.col);
+        validCount++;
+      }
+    } else {
+      validCount = remaining.length;
+    }
+
+    if (validCount < remaining.length) {
+      setPendingMoves(remaining.slice(0, validCount));
+      setLocalError('notifications.move_rejected');
+    } else if (remaining.length < pendingMoves.length) {
+      setPendingMoves(remaining);
+    }
+  }, [data, serverState, pendingMoves]);
 
   useEffect(() => {
     if (!data || data.mode !== 'ranked' || ratingsFetchedRef.current) return;
