@@ -2,18 +2,34 @@
 // wrapper) and the search worker. Pure constants — no React, no DOM.
 
 export const AI_TIERS = {
-  beginner: { kind: 'oneply' },
-  easy:     { kind: 'idab', budgetMs:  200, eps: 0.15, epsMin: 2.0,  endgame: false },
-  medium:   { kind: 'idab', budgetMs: 1000, eps: 0.05, epsMin: 1.0,  endgame: false },
-  hard:     { kind: 'idab', budgetMs: 3000, eps: 0.01, epsMin: 0.5,  endgame: false },
-  expert:   { kind: 'idab', budgetMs: 6000, eps: 0,    epsMin: 0,    endgame: true  }
+  beginner:     { kind: 'oneply',   evalName: 'simple' },
+  novice:       { kind: 'fixedab',  depth: 3, evalName: 'basic',  timeMs: 2000 },
+  intermediate: { kind: 'idab',     budgetMs: 3500, maxDepth: 7, evalName: 'rich' },
+  advanced:     { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }
 };
 
-export const TIER_ORDER = ['beginner', 'easy', 'medium', 'hard', 'expert'];
+export const TIER_ORDER = ['beginner', 'novice', 'intermediate', 'advanced'];
 
-export const ENDGAME_THRESHOLD = 8;       // remaining empty non-elim cells
-export const ENDGAME_SAFETY_MS = 1000;    // fall back to IDAB if solver overruns
-export const EVAL_MATERIAL = 10.0;        // weight on biggest-group diff (the actual scoring rule)
-export const EVAL_EXT      = 0.5;         // weight on biggest-group frontier (growth potential)
-export const EVAL_TOTAL    = 0.3;         // weight on total dot-count (tertiary nudge to lay claim)
-export const WIN_MAG       = 100000;      // terminal magnitude
+// Endgame solver (Advanced only) — exact αβ to terminal, no eval
+export const ENDGAME_THRESHOLD = 12;
+export const ENDGAME_SAFETY_MS = 2000;
+
+// Eval — basic (Novice)
+export const EVAL_BASIC_MATERIAL    = 10.0;
+export const EVAL_BASIC_LIBERTY     = 0.4;
+export const EVAL_BASIC_NEUTRAL_PEN = 0.5;
+
+// Eval — rich (Intermediate)
+export const EVAL_RICH_MATERIAL     = 10.0;
+export const EVAL_RICH_LIBERTY      = 0.4;
+export const EVAL_RICH_LIB_PRESSURE = 0.6;
+export const EVAL_RICH_SECONDARY    = 0.7;
+export const EVAL_RICH_NEUTRAL_PEN  = 0.5;
+export const EVAL_RICH_CUT_BONUS    = 0.4;
+
+// MCTS (Advanced)
+export const MCTS_C    = 1.4142;     // sqrt(2), UCT exploration constant
+export const RAVE_K    = 1500;        // β = √(K / (3·N + K))
+export const PW_ALPHA  = 0.5;         // progressive widening: max children = ceil(visits^α)
+
+export const WIN_MAG = 100000;

@@ -10,28 +10,28 @@ Ver. 1.0 (1)
 - check readme file link to google play store
 
 AI TIERS
-1. Beginner - Greedy one-ply
+1. Beginner (Početni) - Greedy one-ply
 Evaluate every candidate (friendly, neutral) pair with a simple score: 
 (your largest group size) − (opponent's largest group size) after the move. 
 Pick the best. No lookahead beyond the immediate move. This level teaches 
 the player that extending groups matters, but it falls for any two-move trap 
 because it can't see the opponent's reply.
 
-2. Novice - Alpha-beta, depth 3, basic evaluation
+2. Novice (Novak) - Alpha-beta, depth 3, basic evaluation
 Full alpha-beta search to depth 3 (your move, opponent's reply, your follow-up) 
 with a hand-tuned evaluation that includes group sizes, liberties (empty neighbors 
 of your group), and a small penalty for neutral stones touching your own structure. 
 This is the first level that actively plans — it will see and avoid most one-move traps. 
 Casual players will start needing to think.
 
-3. Intermediate - Iterative-deepening alpha-beta + transposition table, depth 5-6
+3. Intermediate (Iskusni) - Iterative-deepening alpha-beta + transposition table, depth 5-6
 Same algorithm family, but with iterative deepening, Zobrist-hashed transposition table, 
 and proper move ordering (principal variation, killer moves). Reaches depth 5–6 in 
 a couple of seconds. The evaluation gets richer: secondary group sizes, neutral-stone 
 placement quality (rewarding cuts of opponent groups), and a liberty-pressure term. 
 This level punishes loose play and forces the human to actually calculate.
 
-4. Advanced - MCTS with RAVE, heavy playouts, and exact endgame solver, ~100k simulations/move
+4. Advanced (Napredni) - MCTS with RAVE, heavy playouts, and exact endgame solver, ~100k simulations/move
 The full classical MCTS package: RAVE/AMAF statistics, progressive widening, 
 heavy playout policy that handles both friendly and neutral placement intelligently, 
 and a hard handoff to exact alpha-beta search once ~12–14 cells remain (where the endgame 
@@ -39,7 +39,7 @@ becomes solvable). Around 100,000 simulations per move. This level rarely makes 
 mistake and plays the endgame perfectly. Beating it requires real strategic understanding 
 of neutral-stone tension.
 
-5. Expert - AlphaZero
+5. Expert (Stručnjak) - AlphaZero
 
 12 x 12 BOARD
 #	Word		    P	B	C/B	T

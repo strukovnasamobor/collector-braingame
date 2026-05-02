@@ -6,9 +6,18 @@ import {
   AI_TIERS,
   ENDGAME_THRESHOLD,
   ENDGAME_SAFETY_MS,
-  EVAL_MATERIAL,
-  EVAL_EXT,
-  EVAL_TOTAL,
+  EVAL_BASIC_MATERIAL,
+  EVAL_BASIC_LIBERTY,
+  EVAL_BASIC_NEUTRAL_PEN,
+  EVAL_RICH_MATERIAL,
+  EVAL_RICH_LIBERTY,
+  EVAL_RICH_LIB_PRESSURE,
+  EVAL_RICH_SECONDARY,
+  EVAL_RICH_NEUTRAL_PEN,
+  EVAL_RICH_CUT_BONUS,
+  MCTS_C,
+  RAVE_K,
+  PW_ALPHA,
   WIN_MAG
 } from './aiTiers';
 
@@ -22,7 +31,6 @@ const MAX_PLY = 64;
 const MAX_DEPTH = 32;
 const TT_CAP = 500_000;
 const HISTORY_OVERFLOW = 1 << 28;
-const QS_CAP = 4;
 const ENDGAME_TT_DEPTH = 99;
 
 // ── Per-search mutable state ───────────────────────────────────────────────
@@ -37,31 +45,34 @@ let hashLo = 0;
 let hashHi = 0;
 
 let tt = null;          // Map<string, { depth, value, flag, move }>
-let history = null;     // Float64Array of size 4*N2 — index = ((side-1)*2 + phase) * N2 + cell
-let killers = null;     // Int16Array MAX_PLY*2 — slots per ply
+let history = null;     // Float64Array of size 4*N2
+let killers = null;     // Int16Array MAX_PLY*2
 let moveBufs = null;    // Array<Int16Array(N2)> per ply
 let scoreBuf = null;    // Int32Array(N2) — scratch for ordering
 let visitedBuf = null;  // Uint8Array(N2)
 let stackBuf = null;    // Int16Array(N2)
 let frontierBuf = null; // Uint8Array(N2)
+let scratchBuf = null;  // Uint8Array(N2) — secondary scratch for eval helpers
 
 let deadline = 0;
 let timedOut = false;
+
+// `currentEval` is set by the dispatch BEFORE each search to point at the
+// right eval variant for the active tier.
+let currentEval = null;
 
 // ── Zobrist (per-worker, sized for the largest board we've seen) ───────────
 let zN2 = 0;
 let Z_CELL_LO = null;   // Int32Array of size 3*N2 — [P1 | P2 | DEAD]
 let Z_CELL_HI = null;
-let Z_LAST_LO = null;   // Int32Array of size N2
+let Z_LAST_LO = null;
 let Z_LAST_HI = null;
 let Z_PHASE_LO = 0;
 let Z_PHASE_HI = 0;
 let Z_SIDE_LO = 0;
 let Z_SIDE_HI = 0;
 
-function rand32() {
-  return (Math.random() * 0x100000000) | 0;
-}
+function rand32() { return (Math.random() * 0x100000000) | 0; }
 
 function ensureZobrist() {
   if (Z_CELL_LO && zN2 === N2) return;
@@ -177,7 +188,7 @@ function genEliminations(buf, lastI) {
   return n;
 }
 
-// ── Evaluation primitives ──────────────────────────────────────────────────
+// ── Group helpers ──────────────────────────────────────────────────────────
 function biggestGroup(player) {
   let best = 0;
   visitedBuf.fill(0);
@@ -211,9 +222,7 @@ function biggestGroup(player) {
 }
 
 // Returns the size of player's biggest connected group AND the count of empty
-// non-dead cells 8-adjacent to that specific group. Two passes on visitedBuf:
-// first pass finds the biggest group + its anchor cell; second pass walks that
-// group only, counting frontier into frontierBuf.
+// non-dead cells 8-adjacent to that specific group.
 function biggestGroupSizeAndFrontier(player) {
   visitedBuf.fill(0);
   let bestSize = 0;
@@ -247,7 +256,6 @@ function biggestGroupSizeAndFrontier(player) {
   }
   if (bestAnchor < 0) return { size: 0, frontier: 0 };
 
-  // Second pass: walk the biggest group, count empty/non-dead 8-neighbors.
   visitedBuf.fill(0);
   frontierBuf.fill(0);
   let sp = 0;
@@ -284,7 +292,9 @@ function totalDots(player) {
   return n;
 }
 
-function frontierCount(player) {
+// ── Eval helpers (used by basic + rich evals) ──────────────────────────────
+// Empty/non-dead cells 8-adjacent to ANY of player's dots, de-duplicated.
+function totalLiberties(player) {
   let n = 0;
   frontierBuf.fill(0);
   for (let i = 0; i < N2; i++) {
@@ -307,18 +317,128 @@ function frontierCount(player) {
   return n;
 }
 
-function evaluate() {
-  const opp = side === 1 ? 2 : 1;
-  const me = biggestGroupSizeAndFrontier(side);
-  const op = biggestGroupSizeAndFrontier(opp);
-  const myCnt = totalDots(side);
-  const opCnt = totalDots(opp);
-  return EVAL_MATERIAL * (me.size - op.size)
-       + EVAL_EXT      * (me.frontier - op.frontier)
-       + EVAL_TOTAL    * (myCnt - opCnt);
+// Count of dead cells with ≥1 8-neighbor of player (waste of own structure).
+function neutralAdjacentToOwn(player) {
+  let n = 0;
+  for (let i = 0; i < N2; i++) {
+    if (!dead[i]) continue;
+    const r = (i / size) | 0;
+    const c = i - r * size;
+    let touches = false;
+    for (let dr = -1; dr <= 1 && !touches; dr++) {
+      for (let dc = -1; dc <= 1 && !touches; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+        if (cells[nr * size + nc] === player) touches = true;
+      }
+    }
+    if (touches) n++;
+  }
+  return n;
 }
 
-// ── Move ordering / killers / history ──────────────────────────────────────
+// Sum over dead cells of own-dot 8-neighbours of `victim`. Higher = neutrals
+// are landing right next to victim's dots, breaking their potential connections.
+function cutScore(victim) {
+  let s = 0;
+  for (let i = 0; i < N2; i++) {
+    if (!dead[i]) continue;
+    s += countAdjacentDots(i, victim);
+  }
+  return s;
+}
+
+// Empty/non-dead cells 8-adj to BOTH players' dots — the active fronts.
+// Sign: positive nudge for the side-to-move because it's their turn to act.
+function contestedLiberties(a, b) {
+  // First pass: mark cells 8-adj to a's dots in frontierBuf
+  frontierBuf.fill(0);
+  for (let i = 0; i < N2; i++) {
+    if (cells[i] !== a) continue;
+    const r = (i / size) | 0;
+    const c = i - r * size;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+        const v = nr * size + nc;
+        if (cells[v] === 0 && !dead[v]) frontierBuf[v] = 1;
+      }
+    }
+  }
+  // Second pass: count cells in frontierBuf also 8-adj to b's dots
+  let n = 0;
+  scratchBuf.fill(0);
+  for (let i = 0; i < N2; i++) {
+    if (cells[i] !== b) continue;
+    const r = (i / size) | 0;
+    const c = i - r * size;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+        const v = nr * size + nc;
+        if (frontierBuf[v] && !scratchBuf[v]) {
+          scratchBuf[v] = 1;
+          n++;
+        }
+      }
+    }
+  }
+  return n;
+}
+
+// ── Eval variants ──────────────────────────────────────────────────────────
+function evalSimple() {
+  return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+}
+
+function evalBasic() {
+  const opp = side === 1 ? 2 : 1;
+  const my = biggestGroupSizeAndFrontier(side);
+  const op = biggestGroupSizeAndFrontier(opp);
+  const myLib = totalLiberties(side);
+  const opLib = totalLiberties(opp);
+  const myNeut = neutralAdjacentToOwn(side);
+  const opNeut = neutralAdjacentToOwn(opp);
+  return EVAL_BASIC_MATERIAL    * (my.size - op.size)
+       + EVAL_BASIC_LIBERTY     * (myLib  - opLib)
+       - EVAL_BASIC_NEUTRAL_PEN * (myNeut - opNeut);
+}
+
+function evalRich() {
+  const opp = side === 1 ? 2 : 1;
+  const my = biggestGroupSizeAndFrontier(side);
+  const op = biggestGroupSizeAndFrontier(opp);
+  const myLib = totalLiberties(side);
+  const opLib = totalLiberties(opp);
+  const myNeut = neutralAdjacentToOwn(side);
+  const opNeut = neutralAdjacentToOwn(opp);
+  const mySec = totalDots(side) - my.size;
+  const opSec = totalDots(opp) - op.size;
+  const cutMe = cutScore(opp);   // dead cells helping me cut opp
+  const cutOp = cutScore(side);  // dead cells helping opp cut me
+  const libPressure = contestedLiberties(side, opp);
+  return EVAL_RICH_MATERIAL    * (my.size - op.size)
+       + EVAL_RICH_LIBERTY     * (myLib  - opLib)
+       + EVAL_RICH_SECONDARY   * (mySec  - opSec)
+       + EVAL_RICH_CUT_BONUS   * (cutMe  - cutOp)
+       + EVAL_RICH_LIB_PRESSURE * libPressure
+       - EVAL_RICH_NEUTRAL_PEN * (myNeut - opNeut);
+}
+
+const EVAL_BY_NAME = {
+  simple: evalSimple,
+  basic: evalBasic,
+  rich: evalRich
+};
+
+function evaluate() { return currentEval(); }
+
+// ── Adjacency / move-ordering primitives ───────────────────────────────────
 function countAdjacentDots(idx, who) {
   const r = (idx / size) | 0;
   const c = idx - r * size;
@@ -329,6 +449,21 @@ function countAdjacentDots(idx, who) {
       const nr = r + dr, nc = c + dc;
       if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
       if (cells[nr * size + nc] === who) n++;
+    }
+  }
+  return n;
+}
+
+function countAdjacentDead(idx) {
+  const r = (idx / size) | 0;
+  const c = idx - r * size;
+  let n = 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
+      if (dead[nr * size + nc]) n++;
     }
   }
   return n;
@@ -370,7 +505,6 @@ function orderMoves(buf, n, ttMove, ply) {
     s += history[histIdx(side, phaseIdx, m)] | 0;
     scoreBuf[i] = s;
   }
-  // Insertion sort by descending score
   for (let i = 1; i < n; i++) {
     const m = buf[i], s = scoreBuf[i];
     let j = i - 1;
@@ -389,7 +523,6 @@ function ttKey() { return `${hashLo >>> 0}_${hashHi >>> 0}`; }
 
 function ttStore(key, depth, value, flag, move) {
   if (tt.size > TT_CAP) {
-    // Drop oldest 25% (Map iteration is insertion order)
     const target = (TT_CAP * 0.75) | 0;
     let toDrop = tt.size - target;
     for (const k of tt.keys()) {
@@ -401,11 +534,7 @@ function ttStore(key, depth, value, flag, move) {
 }
 
 // ── Negamax (phase-aware: same side after place, toggles after eliminate) ──
-function isNonQuiet() {
-  return phase === PLACE && frontierCount(side) >= 2;
-}
-
-function negamax(depth, alpha, beta, ply, qsLeft) {
+function negamax(depth, alpha, beta, ply) {
   if (timedOut) return 0;
   if (performance.now() >= deadline) { timedOut = true; return 0; }
   if (ply >= MAX_PLY - 1) return evaluate();
@@ -435,13 +564,7 @@ function negamax(depth, alpha, beta, ply, qsLeft) {
   }
   if (e) ttMove = e.move;
 
-  if (depth <= 0) {
-    // TODO: re-enable quiescence with bounded branching (frontier-grab moves only).
-    // The previous `negamax(2, ...)` extension recursed through the full move
-    // generator and exploded the search budget on eliminate-root, leaving no
-    // result before deadline.
-    return evaluate();
-  }
+  if (depth <= 0) return evaluate();
 
   orderMoves(buf, n, ttMove, ply);
 
@@ -453,11 +576,8 @@ function negamax(depth, alpha, beta, ply, qsLeft) {
     const savedLastIdx = lastIdx;
     if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
     let v;
-    if (wasPhase === PLACE) {
-      v = negamax(depth - 1, alpha, beta, ply + 1, qsLeft);
-    } else {
-      v = -negamax(depth - 1, -beta, -alpha, ply + 1, qsLeft);
-    }
+    if (wasPhase === PLACE) v = negamax(depth - 1, alpha, beta, ply + 1);
+    else v = -negamax(depth - 1, -beta, -alpha, ply + 1);
     if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
     if (timedOut) return 0;
 
@@ -477,7 +597,6 @@ function negamax(depth, alpha, beta, ply, qsLeft) {
   return best;
 }
 
-// ── Root search (full window, records per-move scores for randomization) ──
 function searchRoot(depth) {
   const buf = moveBufs[0];
   const wasPhase = phase;
@@ -499,8 +618,8 @@ function searchRoot(depth) {
     const savedLastIdx = lastIdx;
     if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
     let v;
-    if (wasPhase === PLACE) v = negamax(depth - 1, -INF, INF, 1, QS_CAP);
-    else v = -negamax(depth - 1, -INF, INF, 1, QS_CAP);
+    if (wasPhase === PLACE) v = negamax(depth - 1, -INF, INF, 1);
+    else v = -negamax(depth - 1, -INF, INF, 1);
     if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
     if (timedOut) return null;
     scores.set(m, v);
@@ -509,11 +628,12 @@ function searchRoot(depth) {
   return { bestMove, bestValue: best, scores };
 }
 
-function rootIDAB(budgetMs) {
+function rootIDAB(budgetMs, maxDepth) {
   deadline = performance.now() + budgetMs;
   timedOut = false;
+  const cap = Math.min(MAX_DEPTH, maxDepth || MAX_DEPTH);
   let lastGood = null;
-  for (let depth = 1; depth <= MAX_DEPTH; depth++) {
+  for (let depth = 1; depth <= cap; depth++) {
     const r = searchRoot(depth);
     if (timedOut) break;
     lastGood = r;
@@ -522,7 +642,39 @@ function rootIDAB(budgetMs) {
   return lastGood;
 }
 
-// ── Endgame solver (Expert only, terminal-only leaves) ─────────────────────
+function runFixedAB(depth, timeMsCap) {
+  deadline = performance.now() + (timeMsCap || 10000);
+  timedOut = false;
+  const r = searchRoot(depth);
+  if (timedOut) return null;
+  return r;
+}
+
+// ── 1-ply greedy (Beginner) ────────────────────────────────────────────────
+function runOnePly() {
+  const buf = moveBufs[0];
+  const wasPhase = phase;
+  const n = wasPhase === PLACE ? genPlacements(buf) : genEliminations(buf, lastIdx);
+  if (n === 0) return null;
+  const scores = new Map();
+  for (let i = 0; i < n; i++) {
+    const m = buf[i];
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+    // Eval is from current side-to-move's perspective.
+    // After Place: side unchanged → eval is from our perspective (no negation).
+    // After Eliminate: side flipped → eval is from opp perspective → negate.
+    const raw = evaluate();
+    const v = wasPhase === PLACE ? raw : -raw;
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+    scores.set(m, v);
+  }
+  let best = -INF;
+  for (const v of scores.values()) if (v > best) best = v;
+  return { bestMove: null, bestValue: best, scores };
+}
+
+// ── Endgame solver (Advanced only, terminal-only leaves) ───────────────────
 function endgameNegamax(alpha, beta, ply) {
   if (timedOut) return 0;
   if (performance.now() >= deadline) { timedOut = true; return 0; }
@@ -535,9 +687,7 @@ function endgameNegamax(alpha, beta, ply) {
   const wasPhase = phase;
   if (wasPhase === PLACE) {
     n = genPlacements(buf);
-    if (n === 0) {
-      return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
-    }
+    if (n === 0) return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
   } else {
     n = genEliminations(buf, lastIdx);
     if (n === 0) return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
@@ -616,31 +766,285 @@ function runEndgame() {
   return result;
 }
 
-// ── Beginner: pure 1-ply ───────────────────────────────────────────────────
-function runOnePly() {
-  const buf = moveBufs[0];
-  const wasPhase = phase;
-  const n = wasPhase === PLACE ? genPlacements(buf) : genEliminations(buf, lastIdx);
-  if (n === 0) return null;
-  const scores = new Map();
-  for (let i = 0; i < n; i++) {
-    const m = buf[i];
-    const savedLastIdx = lastIdx;
-    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
-    // Eval is from current side-to-move's perspective.
-    // After Place: side unchanged → eval is from our perspective (no negation).
-    // After Eliminate: side flipped → eval is from opp perspective → negate.
-    const raw = evaluate();
-    const v = wasPhase === PLACE ? raw : -raw;
-    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
-    scores.set(m, v);
+// ── MCTS + RAVE + progressive widening (Advanced) ──────────────────────────
+// Heavy rollout/ordering policy weights.
+function heavyWeight(idx, ph, who) {
+  const opp = who === 1 ? 2 : 1;
+  if (ph === PLACE) {
+    const ownAdj = countAdjacentDots(idx, who);
+    const oppAdj = countAdjacentDots(idx, opp);
+    const deadAdj = countAdjacentDead(idx);
+    return Math.max(0.1, 1 + 3 * ownAdj + 2 * oppAdj - 2 * deadAdj);
   }
-  let best = -INF;
-  for (const v of scores.values()) if (v > best) best = v;
-  return { bestMove: null, bestValue: best, scores };
+  // ELIMINATE
+  const ownAdj = countAdjacentDots(idx, who);
+  const oppAdj = countAdjacentDots(idx, opp);
+  return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
 }
 
-// ── Top-level dispatch + randomization ─────────────────────────────────────
+// Weighted random pick from `arr` of length `n`, weights computed via heavyWeight.
+function pickWeighted(arr, n, ph, who) {
+  let total = 0;
+  for (let i = 0; i < n; i++) total += heavyWeight(arr[i], ph, who);
+  let r = Math.random() * total;
+  for (let i = 0; i < n; i++) {
+    const w = heavyWeight(arr[i], ph, who);
+    r -= w;
+    if (r <= 0) return arr[i];
+  }
+  return arr[n - 1];
+}
+
+function makeMctsNode(parent, move, toMove, nodePhase) {
+  return {
+    parent,
+    move,
+    toMove,
+    phase: nodePhase,
+    untriedSorted: null,
+    untriedCount: 0,
+    children: null,
+    visits: 0,
+    totalScore: 0
+  };
+}
+
+// Shared scratch for moveBuf generation during MCTS expansion (no recursion).
+let mctsGenBuf = null;
+
+// Populate node.untriedSorted lazily, sorted DESC by heavy policy weight.
+// `untriedSorted` stores moves in DESC order; we pop from the FRONT to expand
+// best-policy first.
+function ensureUntried(node) {
+  if (node.untriedSorted !== null) return;
+  const buf = mctsGenBuf;
+  const n = node.phase === PLACE ? genPlacements(buf) : genEliminations(buf, lastIdx);
+  if (n === 0) {
+    node.untriedSorted = new Int16Array(0);
+    node.untriedCount = 0;
+    node.children = [];
+    return;
+  }
+  // sort buf[0..n] by heavy policy DESC (uses shared scoreBuf as scratch)
+  for (let i = 0; i < n; i++) {
+    scoreBuf[i] = Math.round(heavyWeight(buf[i], node.phase, node.toMove) * 1000) | 0;
+  }
+  for (let i = 1; i < n; i++) {
+    const m = buf[i], s = scoreBuf[i];
+    let j = i - 1;
+    while (j >= 0 && scoreBuf[j] < s) {
+      buf[j + 1] = buf[j];
+      scoreBuf[j + 1] = scoreBuf[j];
+      j--;
+    }
+    buf[j + 1] = m;
+    scoreBuf[j + 1] = s;
+  }
+  // Copy only the first n entries (right-sized).
+  node.untriedSorted = buf.slice(0, n);
+  node.untriedCount = n;
+  node.children = [];
+}
+
+// AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
+let amafScore = null;
+let amafVisits = null;
+let amafSeen = null;       // Uint8Array(4*N2), reset per simulation
+let amafSeenList = null;   // Int32Array(4*N2*2), tracks indices touched per sim
+let amafSeenCount = 0;
+
+function amafIdx(s, ph, m) { return ((s - 1) * 2 + ph) * N2 + m; }
+
+function amafTouch(s, ph, m) {
+  const i = amafIdx(s, ph, m);
+  if (!amafSeen[i]) {
+    amafSeen[i] = 1;
+    amafSeenList[amafSeenCount++] = i;
+  }
+}
+
+function amafResetSeen() {
+  for (let k = 0; k < amafSeenCount; k++) amafSeen[amafSeenList[k]] = 0;
+  amafSeenCount = 0;
+}
+
+// UCT-RAVE blend score for child (from parent's perspective).
+// AMAF is keyed by (mover, move-phase, cell). For an edge parent→child, the
+// mover is parent.toMove and the move-phase is parent.phase (the phase AT the
+// time the move was played, before it was applied).
+function uctRaveScore(child, parent) {
+  const cv = child.visits;
+  if (cv === 0) return Infinity;
+  const uctMean = (child.toMove === parent.toMove
+    ? child.totalScore / cv
+    : -child.totalScore / cv);
+  const ai = amafIdx(parent.toMove, parent.phase, child.move);
+  const av = amafVisits[ai];
+  const amafMean = av > 0 ? amafScore[ai] / av : 0;
+  const beta = Math.sqrt(RAVE_K / (3 * cv + RAVE_K));
+  const exploit = (1 - beta) * uctMean + beta * amafMean;
+  const explore = MCTS_C * Math.sqrt(Math.log(parent.visits) / cv);
+  return exploit + explore;
+}
+
+function expandOne(node) {
+  // Pop best untried (front of sorted list, since DESC)
+  const m = node.untriedSorted[0];
+  for (let i = 1; i < node.untriedCount; i++) node.untriedSorted[i - 1] = node.untriedSorted[i];
+  node.untriedCount--;
+
+  const wasPhase = phase;
+  const savedLastIdx = lastIdx;
+  if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+  const child = makeMctsNode(node, m, side, phase);
+  node.children.push(child);
+  return { child, move: m, wasPhase, savedLastIdx };
+}
+
+// Run one MCTS simulation from `root`.
+// State is mutated; everything is undone before returning.
+const mctsSelStack = []; // { move, wasPhase, savedLastIdx }
+const mctsRollStack = []; // { move, wasPhase, savedLastIdx }
+
+function runOneMctsSim(root) {
+  mctsSelStack.length = 0;
+  mctsRollStack.length = 0;
+  amafResetSeen();
+
+  // SELECTION + (in-loop) EXPANSION
+  let node = root;
+  let path = [root];
+  while (true) {
+    ensureUntried(node);
+    // Terminal check: no untried AND no children means no legal moves here.
+    if (node.untriedCount === 0 && node.children.length === 0) break;
+
+    const cap = Math.max(1, Math.ceil(Math.pow(Math.max(1, node.visits), PW_ALPHA)));
+    if (node.children.length < cap && node.untriedCount > 0) {
+      // EXPAND
+      const r = expandOne(node);
+      mctsSelStack.push({ move: r.move, wasPhase: r.wasPhase, savedLastIdx: r.savedLastIdx });
+      amafTouch(node.toMove, r.wasPhase, r.move);
+      path.push(r.child);
+      node = r.child;
+      break; // expanded — proceed to rollout
+    }
+
+    // SELECT existing child via UCT-RAVE
+    let best = -Infinity;
+    let bestChild = null;
+    for (const c of node.children) {
+      const sc = uctRaveScore(c, node);
+      if (sc > best) { best = sc; bestChild = c; }
+    }
+    if (bestChild === null) break;
+    const wasPhase = phase;
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(bestChild.move); else applyEliminate(bestChild.move);
+    mctsSelStack.push({ move: bestChild.move, wasPhase, savedLastIdx });
+    amafTouch(node.toMove, wasPhase, bestChild.move);
+    node = bestChild;
+    path.push(node);
+  }
+
+  // ROLLOUT — until terminal or safety cap
+  const ROLL_CAP = 2 * N2;
+  let plyCount = 0;
+  while (plyCount < ROLL_CAP) {
+    const buf = moveBufs[0]; // safe — selection/expansion no longer descending recursively
+    let n;
+    const wasPhase = phase;
+    if (wasPhase === PLACE) n = genPlacements(buf);
+    else n = genEliminations(buf, lastIdx);
+    if (n === 0) break;
+    const m = pickWeighted(buf, n, wasPhase, side);
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+    mctsRollStack.push({ move: m, wasPhase, savedLastIdx });
+    amafTouch(wasPhase === PLACE ? (side) : (side === 1 ? 2 : 1), wasPhase, m);
+    // Note: wasPhase=PLACE means the mover was current `side` (no toggle yet).
+    // wasPhase=ELIMINATE means the mover was the OPPOSITE side after our toggle.
+    // The amafTouch call handles that by computing the mover.
+    plyCount++;
+  }
+
+  // Compute final result from leaf side-to-move's perspective: ∈ {-1, 0, +1}.
+  const myFinal = biggestGroup(side);
+  const opFinal = biggestGroup(side === 1 ? 2 : 1);
+  const leafResult = myFinal > opFinal ? 1 : myFinal < opFinal ? -1 : 0;
+
+  // BACKPROP — walk path leaf→root, flipping when child.toMove !== node.toMove.
+  let s = leafResult;
+  for (let i = path.length - 1; i >= 0; i--) {
+    const n = path[i];
+    n.visits++;
+    n.totalScore += s;
+    if (i > 0) {
+      const parent = path[i - 1];
+      if (parent.toMove !== n.toMove) s = -s;
+    }
+  }
+
+  // Update AMAF: every touched (side, phase, move) gets the result aligned with
+  // its mover's perspective. amafScore is summed signed by mover side. Since
+  // we recorded each (mover, phase, move), we want to add `result_for_mover`.
+  // Compute mover's result by finding result aligned to mover's perspective.
+  // Simplification: we add `leafResult` flipped to mover's side perspective.
+  // The leaf side's perspective is `leafResult`. For a mover whose toMove ===
+  // leafSide, add `leafResult`. For a mover with toMove !== leafSide, add `-leafResult`.
+  // amafSeenList stores indices = ((mover-1)*2 + phase) * N2 + move; we can decode mover.
+  const leafSide = side; // current side AT the leaf (we're at leaf state right now)
+  for (let k = 0; k < amafSeenCount; k++) {
+    const idx = amafSeenList[k];
+    const mover = ((idx / N2) | 0) >> 1; // ((idx/N2) | 0) = (mover-1)*2 + phase; >>1 = mover-1
+    const moverSide = mover + 1;
+    const sign = (moverSide === leafSide) ? 1 : -1;
+    amafScore[idx] += sign * leafResult;
+    amafVisits[idx] += 1;
+  }
+
+  // UNDO rollout, then selection.
+  while (mctsRollStack.length > 0) {
+    const { move: m, wasPhase, savedLastIdx } = mctsRollStack.pop();
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+  }
+  while (mctsSelStack.length > 0) {
+    const { move: m, wasPhase, savedLastIdx } = mctsSelStack.pop();
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+  }
+}
+
+function runMCTSRave(cfg) {
+  const root = makeMctsNode(null, -1, side, phase);
+  amafScore = new Float64Array(4 * N2);
+  amafVisits = new Int32Array(4 * N2);
+  amafSeen = new Uint8Array(4 * N2);
+  amafSeenList = new Int32Array(4 * N2);
+  amafSeenCount = 0;
+
+  deadline = performance.now() + cfg.timeMs;
+  timedOut = false;
+  let sims = 0;
+  const cap = cfg.simBudget || 100000;
+  while (sims < cap) {
+    if (performance.now() >= deadline) { timedOut = true; break; }
+    runOneMctsSim(root);
+    sims++;
+  }
+
+  if (!root.children || root.children.length === 0) return null;
+  // Robust child: most-visited.
+  let bestChild = root.children[0];
+  for (const c of root.children) {
+    if (c.visits > bestChild.visits) bestChild = c;
+  }
+  // Build a `scores` Map for randomization compatibility (visit-counts as score).
+  const scores = new Map();
+  for (const c of root.children) scores.set(c.move, c.visits);
+  return { bestMove: bestChild.move, bestValue: bestChild.visits, scores };
+}
+
+// ── Top-level dispatch + tie-break randomization ───────────────────────────
 function pickEps(scores, eps, epsMin) {
   if (!scores || scores.size === 0) return null;
   let best = -INF;
@@ -661,19 +1065,31 @@ function countEmpty() {
 }
 
 function chooseMove(cfg) {
+  // Set the eval pointer for tiers that use one
+  currentEval = EVAL_BY_NAME[cfg.evalName] || evalRich;
+
   if (cfg.kind === 'oneply') {
     const r = runOnePly();
     return pickEps(r?.scores, 0, 0);
   }
-
-  if (cfg.endgame && countEmpty() <= ENDGAME_THRESHOLD) {
-    const r = runEndgame();
-    if (r) return pickEps(r.scores, 0, 0);
-    // fall through to IDAB if endgame timed out
+  if (cfg.kind === 'fixedab') {
+    const r = runFixedAB(cfg.depth, cfg.timeMs);
+    return pickEps(r?.scores, 0, 0);
   }
-
-  const r = rootIDAB(cfg.budgetMs);
-  return pickEps(r?.scores, cfg.eps, cfg.epsMin);
+  if (cfg.kind === 'idab') {
+    const r = rootIDAB(cfg.budgetMs, cfg.maxDepth);
+    return pickEps(r?.scores, 0, 0);
+  }
+  if (cfg.kind === 'mctsrave') {
+    if (cfg.endgame && countEmpty() <= ENDGAME_THRESHOLD) {
+      const r = runEndgame();
+      if (r) return pickEps(r.scores, 0, 0);
+      // fall through to MCTS if endgame timed out
+    }
+    const r = runMCTSRave(cfg);
+    return pickEps(r?.scores, 0, 0);
+  }
+  return null;
 }
 
 // ── State init from input message ──────────────────────────────────────────
@@ -709,6 +1125,8 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
   visitedBuf = new Uint8Array(N2);
   stackBuf = new Int16Array(N2);
   frontierBuf = new Uint8Array(N2);
+  scratchBuf = new Uint8Array(N2);
+  mctsGenBuf = new Int16Array(N2);
   timedOut = false;
 }
 
