@@ -1,4 +1,4 @@
-- online AI - Collector is too slow
+- online AI - MasterCollector is too slow
 
 Ver. 1.0 (1)
 - remove printing logs
@@ -17,7 +17,7 @@ ONLINE AI TIERS
 1. Seeker
 2. Hunter
 3. Collector
-ToDo: 4. Master Collector - AlphaZero
+ToDo: 4. MasterCollector - AlphaZero
 
 12 x 12 BOARD
 #	Word		    P	B	C/B	T
