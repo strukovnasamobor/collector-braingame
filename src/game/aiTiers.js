@@ -2,13 +2,13 @@
 // wrapper) and the search worker. Pure constants — no React, no DOM.
 
 export const AI_TIERS = {
-  beginner:     { kind: 'oneply',   evalName: 'simple' },
-  novice:       { kind: 'fixedab',  depth: 3, evalName: 'basic',  timeMs: 2000 },
-  intermediate: { kind: 'idab',     budgetMs: 3500, maxDepth: 7, evalName: 'rich' },
-  advanced:     { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }
+  beginner: { kind: 'oneply',   evalName: 'simple' },
+  novice:   { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 },
+  expert:   { kind: 'idab',     budgetMs: 6000, maxDepth: 9, evalName: 'rich', endgame: true },
+  master:   { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }
 };
 
-export const TIER_ORDER = ['beginner', 'novice', 'intermediate', 'advanced'];
+export const TIER_ORDER = ['beginner', 'novice', 'expert', 'master'];
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval
 export const ENDGAME_THRESHOLD = 12;
@@ -22,7 +22,6 @@ export const EVAL_BASIC_NEUTRAL_PEN = 0.5;
 // Eval — rich (Intermediate)
 export const EVAL_RICH_MATERIAL     = 10.0;
 export const EVAL_RICH_LIBERTY      = 0.4;
-export const EVAL_RICH_LIB_PRESSURE = 0.6;
 export const EVAL_RICH_SECONDARY    = 0.7;
 export const EVAL_RICH_NEUTRAL_PEN  = 0.5;
 export const EVAL_RICH_CUT_BONUS    = 0.4;

@@ -11,7 +11,6 @@ import {
   EVAL_BASIC_NEUTRAL_PEN,
   EVAL_RICH_MATERIAL,
   EVAL_RICH_LIBERTY,
-  EVAL_RICH_LIB_PRESSURE,
   EVAL_RICH_SECONDARY,
   EVAL_RICH_NEUTRAL_PEN,
   EVAL_RICH_CUT_BONUS,
@@ -52,7 +51,6 @@ let scoreBuf = null;    // Int32Array(N2) — scratch for ordering
 let visitedBuf = null;  // Uint8Array(N2)
 let stackBuf = null;    // Int16Array(N2)
 let frontierBuf = null; // Uint8Array(N2)
-let scratchBuf = null;  // Uint8Array(N2) — secondary scratch for eval helpers
 
 let deadline = 0;
 let timedOut = false;
@@ -349,48 +347,6 @@ function cutScore(victim) {
   return s;
 }
 
-// Empty/non-dead cells 8-adj to BOTH players' dots — the active fronts.
-// Sign: positive nudge for the side-to-move because it's their turn to act.
-function contestedLiberties(a, b) {
-  // First pass: mark cells 8-adj to a's dots in frontierBuf
-  frontierBuf.fill(0);
-  for (let i = 0; i < N2; i++) {
-    if (cells[i] !== a) continue;
-    const r = (i / size) | 0;
-    const c = i - r * size;
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        if (dr === 0 && dc === 0) continue;
-        const nr = r + dr, nc = c + dc;
-        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
-        const v = nr * size + nc;
-        if (cells[v] === 0 && !dead[v]) frontierBuf[v] = 1;
-      }
-    }
-  }
-  // Second pass: count cells in frontierBuf also 8-adj to b's dots
-  let n = 0;
-  scratchBuf.fill(0);
-  for (let i = 0; i < N2; i++) {
-    if (cells[i] !== b) continue;
-    const r = (i / size) | 0;
-    const c = i - r * size;
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        if (dr === 0 && dc === 0) continue;
-        const nr = r + dr, nc = c + dc;
-        if (nr < 0 || nr >= size || nc < 0 || nc >= size) continue;
-        const v = nr * size + nc;
-        if (frontierBuf[v] && !scratchBuf[v]) {
-          scratchBuf[v] = 1;
-          n++;
-        }
-      }
-    }
-  }
-  return n;
-}
-
 // ── Eval variants ──────────────────────────────────────────────────────────
 function evalSimple() {
   return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
@@ -419,14 +375,12 @@ function evalRich() {
   const opNeut = neutralAdjacentToOwn(opp);
   const mySec = totalDots(side) - my.size;
   const opSec = totalDots(opp) - op.size;
-  const cutMe = cutScore(opp);   // dead cells helping me cut opp
-  const cutOp = cutScore(side);  // dead cells helping opp cut me
-  const libPressure = contestedLiberties(side, opp);
+  const cutMe = cutScore(opp);   // dead cells blocking opp's growth
+  const cutOp = cutScore(side);  // dead cells blocking my growth
   return EVAL_RICH_MATERIAL    * (my.size - op.size)
        + EVAL_RICH_LIBERTY     * (myLib  - opLib)
        + EVAL_RICH_SECONDARY   * (mySec  - opSec)
        + EVAL_RICH_CUT_BONUS   * (cutMe  - cutOp)
-       + EVAL_RICH_LIB_PRESSURE * libPressure
        - EVAL_RICH_NEUTRAL_PEN * (myNeut - opNeut);
 }
 
@@ -1077,6 +1031,11 @@ function chooseMove(cfg) {
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'idab') {
+    if (cfg.endgame && countEmpty() <= ENDGAME_THRESHOLD) {
+      const eg = runEndgame();
+      if (eg) return pickEps(eg.scores, 0, 0);
+      // fall through to IDAB if endgame solver timed out
+    }
     const r = rootIDAB(cfg.budgetMs, cfg.maxDepth);
     return pickEps(r?.scores, 0, 0);
   }
@@ -1125,7 +1084,6 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
   visitedBuf = new Uint8Array(N2);
   stackBuf = new Int16Array(N2);
   frontierBuf = new Uint8Array(N2);
-  scratchBuf = new Uint8Array(N2);
   mctsGenBuf = new Int16Array(N2);
   timedOut = false;
 }
