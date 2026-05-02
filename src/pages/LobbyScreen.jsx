@@ -121,7 +121,7 @@ export default function LobbyScreen() {
                 {t('lobby.create_ranked')}
               </IonButton>
               <IonButton
-                fill="outline"
+                className="sk-menu-btn"
                 expand="block"
                 onClick={handleSignOut}
               >
