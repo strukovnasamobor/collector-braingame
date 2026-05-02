@@ -36,11 +36,11 @@ export default function MatchmakingQueuePage() {
     const [cancelling, setCancelling] = useState(false);
 
     const safeMode = useMemo(
-        () => (mode === 'ranked' || mode === 'casual' ? mode : 'casual'),
+        () => (mode === 'ranked' || mode === 'standard' ? mode : 'standard'),
         [mode]
     );
 
-    const casualGridSize = clampGridSize(query.get('gridSize'));
+    const standardGridSize = clampGridSize(query.get('gridSize'));
 
     useEffect(() => {
         if (!loading && !user) history.replace('/online/auth');
@@ -84,8 +84,8 @@ export default function MatchmakingQueuePage() {
                 await enqueueForMatch({
                     user,
                     mode: safeMode,
-                    gridSize: isRanked ? 8 : casualGridSize,
-                    // Online games (both ranked and casual) always run with the timer.
+                    gridSize: isRanked ? 8 : standardGridSize,
+                    // Online games (both ranked and standard) always run with the timer.
                     timerEnabled: true
                 });
 
@@ -141,7 +141,7 @@ export default function MatchmakingQueuePage() {
     }, [
         user,
         safeMode,
-        casualGridSize,
+        standardGridSize,
         history,
         t
     ]);
@@ -173,7 +173,7 @@ export default function MatchmakingQueuePage() {
     }, [registerExit, clearExit, cancel, t]);
 
     const modeLabel =
-        safeMode === 'ranked' ? t('lobby.matchmaking_ranked') : t('lobby.matchmaking_casual');
+        safeMode === 'ranked' ? t('lobby.matchmaking_ranked') : t('lobby.matchmaking_standard');
 
     return (
         <IonPage>

@@ -13,7 +13,7 @@ import { enterOutline, arrowBackOutline } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
-import { joinCasualRoom } from '../services/firebaseActions';
+import { joinStandardRoom } from '../services/firebaseActions';
 import { sanitizeRoomCode, ROOM_CODE_LEN } from '../utils/sanitize';
 
 export default function JoinRoomForm() {
@@ -37,7 +37,7 @@ export default function JoinRoomForm() {
     setError('');
     setJoining(true);
     try {
-      const result = await joinCasualRoom({ code: clean });
+      const result = await joinStandardRoom({ code: clean });
       const gameId = result?.data?.gameId || 'game_' + clean;
       history.replace(`/online/game/${gameId}`);
     } catch (e) {

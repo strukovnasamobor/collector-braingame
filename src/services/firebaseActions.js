@@ -36,15 +36,23 @@ export async function ensurePlayerProfile() {
   return callBackend('/profile/ensure', {});
 }
 
-export async function createCasualRoom({ code, gridSize, timerEnabled }) {
+export async function updateUserDisplayName({ displayName }) {
+  return callBackend('/profile/update-name', { displayName });
+}
+
+export async function deleteUserProfile() {
+  return callBackend('/profile/delete', {});
+}
+
+export async function createStandardRoom({ code, gridSize, timerEnabled }) {
   return callBackend('/room/create', { code, gridSize, timerEnabled });
 }
 
-export async function joinCasualRoom({ code }) {
+export async function joinStandardRoom({ code }) {
   return callBackend('/room/join', { code });
 }
 
-export async function cancelCasualRoom({ code }) {
+export async function cancelStandardRoom({ code }) {
   return callBackend('/room/cancel', { code });
 }
 

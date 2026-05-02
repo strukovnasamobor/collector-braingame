@@ -1,6 +1,6 @@
 // Idempotent bootstrap for online AI opponents. Run from the cron handler
 // every minute: ensures each bot tier has a player profile + persistent queue
-// presence in casual (per gridSize) and ranked. Existing entries are
+// presence in standard (per gridSize) and ranked. Existing entries are
 // refreshed so updatedAtMs stays current and the stale-prune sweep won't
 // remove them. Player profile mu/sigma/rating are NOT touched if already
 // present — bot ratings evolve from match results.
@@ -9,9 +9,9 @@ import {
   ALL_TIERS,
   BOT_DISPLAY,
   BOT_INITIAL_RATING,
-  CASUAL_BOT_GRID_SIZES,
+  STANDARD_BOT_GRID_SIZES,
   botUidFor,
-  casualBotQueueDocId,
+  standardBotQueueDocId,
   rankedBotQueueDocId
 } from '../ai/bots';
 
@@ -80,19 +80,19 @@ export async function seedBots(env, helpers) {
       updatedAt: nowIso
     };
 
-    // Casual: one entry per supported grid size, all timer-on.
-    for (const gridSize of CASUAL_BOT_GRID_SIZES) {
-      const docId = casualBotQueueDocId(tier, gridSize);
-      const existing = await getDocument(env, 'matchmakingQueue_casual', docId);
+    // Standard: one entry per supported grid size, all timer-on.
+    for (const gridSize of STANDARD_BOT_GRID_SIZES) {
+      const docId = standardBotQueueDocId(tier, gridSize);
+      const existing = await getDocument(env, 'matchmakingQueue_standard', docId);
       const updateTime = existing?.updateTime;
       const entry = {
         ...entryBase,
-        mode: 'casual',
+        mode: 'standard',
         gridSize,
         timerEnabled: true
       };
       try {
-        await writeDocument(env, 'matchmakingQueue_casual', docId, entry, updateTime);
+        await writeDocument(env, 'matchmakingQueue_standard', docId, entry, updateTime);
       } catch (_) {
         // Another writer raced; we'll catch up on the next tick.
       }

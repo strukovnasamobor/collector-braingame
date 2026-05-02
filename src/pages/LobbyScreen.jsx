@@ -15,14 +15,13 @@ import {
   enterOutline,
   trophySharp,
   addCircleOutline,
-  flashOutline,
-  logOutOutline
+  flashOutline
 } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useGameExit } from '../contexts/GameExitContext';
-import { createCasualRoom } from '../services/firebaseActions';
+import { createStandardRoom } from '../services/firebaseActions';
 
 function generateGameCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -33,9 +32,9 @@ function generateGameCode() {
 
 export default function LobbyScreen() {
   const { t } = useI18n();
-  const { user, loading, signOut } = useAuth();
+  const { user, loading, displayName } = useAuth();
   const history = useHistory();
-  const [mode, setMode] = useState(null); // null | 'casual' | 'ranked'
+  const [mode, setMode] = useState(null); // null | 'standard' | 'ranked'
   const [gridSize, setGridSize] = useState(8);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +57,7 @@ export default function LobbyScreen() {
 
   if (!user) return null;
 
-  const handleCreateCasualRoom = async () => {
+  const handleCreateStandardRoom = async () => {
     const size = gridSize;
     const code = generateGameCode();
 
@@ -66,7 +65,7 @@ export default function LobbyScreen() {
     setError('');
     try {
       // Online games always have the per-turn timer.
-      await createCasualRoom({ code, gridSize: size, timerEnabled: true });
+      await createStandardRoom({ code, gridSize: size, timerEnabled: true });
       history.push(`/online/waiting/${code}`);
     } catch (e) {
       setError(e.message);
@@ -77,28 +76,27 @@ export default function LobbyScreen() {
 
   const handleFindMatch = () => {
     // Online matches always have the per-turn timer; only board size needs
-    // to be carried over for casual matchmaking.
-    const params = mode === 'casual' ? `?gridSize=${gridSize}` : '';
+    // to be carried over for standard matchmaking.
+    const params = mode === 'standard' ? `?gridSize=${gridSize}` : '';
     history.push(`/online/matchmaking/${mode}${params}`);
-  };
-
-  const handleSignOut = async () => {
-    await signOut();
-    history.push('/online');
   };
 
   const handleUserBarClick = () => {
     setShowEmail(!showEmail);
   };
 
-  const userLabel = showEmail ? user.email : (user.displayName || user.email);
+  const userLabel = showEmail ? user.email : (displayName || user.email);
 
   return (
     <IonPage>
       <AppHeader />
       <IonContent fullscreen>
         <div className="sk-menu-content">
-          <div className="sk-user-bar" title={user.email} onClick={handleUserBarClick}>
+          <div
+            className="sk-user-bar"
+            title={user.email}
+            onClick={handleUserBarClick}
+          >
             {userLabel}
           </div>
 
@@ -107,10 +105,10 @@ export default function LobbyScreen() {
               <IonButton
                 className="sk-menu-btn"
                 expand="block"
-                onClick={() => setMode('casual')}
+                onClick={() => setMode('standard')}
               >
                 <IonIcon slot="start" icon={gameControllerOutline} />
-                {t('lobby.create_casual')}
+                {t('lobby.create_standard')}
               </IonButton>
               <IonButton
                 className="sk-menu-btn"
@@ -120,21 +118,13 @@ export default function LobbyScreen() {
                 <IonIcon slot="start" icon={trophySharp} />
                 {t('lobby.create_ranked')}
               </IonButton>
-              <IonButton
-                className="sk-menu-btn"
-                expand="block"
-                onClick={handleSignOut}
-              >
-                <IonIcon slot="start" icon={logOutOutline} />
-                {t('header.sign_out')}
-              </IonButton>
             </div>
           )}
 
-          {mode === 'casual' && (
+          {mode === 'standard' && (
             <div className="sk-lobby-panel">
               <div style={{ fontWeight: 700, marginBottom: 10, textAlign: 'center' }}>
-                {t('lobby.casual_mode')}
+                {t('lobby.standard_mode')}
               </div>
               <IonItem>
                 <IonLabel position="stacked">{t('lobby.grid_size')}</IonLabel>
@@ -153,7 +143,7 @@ export default function LobbyScreen() {
                 <p style={{ color: '#dc3545', marginTop: 12 }}>{error}</p>
               )}
               <div className="sk-row-buttons">
-                <IonButton disabled={creating} onClick={handleCreateCasualRoom}>
+                <IonButton disabled={creating} onClick={handleCreateStandardRoom}>
                   <IonIcon slot="start" icon={addCircleOutline} />
                   {t('lobby.create_button')}
                 </IonButton>

@@ -276,7 +276,7 @@ export function useOnlineGame(gameId) {
     if (!data || !data.result || !user || !myPlayerNumber) return;
     if (eloHandledRef.current) return;
 
-    if (data.mode === 'casual') {
+    if (data.mode === 'standard') {
       eloHandledRef.current = true;
       setFinalResult(data.result);
       return;

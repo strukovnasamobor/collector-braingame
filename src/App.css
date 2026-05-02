@@ -60,6 +60,7 @@
 }
 
 .sk-user-bar {
+  position: relative;
   font-size: 20px;
   font-weight: 600;
   margin-bottom: 24px;
@@ -489,6 +490,18 @@ body.dark .sk-turn-timer {
 }
 
 .sk-wdl-cell {
+  color: var(--sk-user-bar-color);
+  font-size: 0.88rem;
+}
+
+/* W/D/L split into three centered columns. Header inherits th sizing,
+ * body cell uses smaller, dimmer style so the rating column still pops. */
+.sk-leaderboard-table .sk-stat-cell {
+  text-align: center;
+  width: 36px;
+}
+
+.sk-leaderboard-table tbody .sk-stat-cell {
   color: var(--sk-user-bar-color);
   font-size: 0.88rem;
 }

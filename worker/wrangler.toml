@@ -6,7 +6,9 @@ compatibility_date = "2026-04-28"
 FIREBASE_PROJECT_ID = "collector-braingame"
 
 [triggers]
-crons = ["* * * * *"]
+# "* * * * *"   — every minute: sweep stale games, refresh bot queue heartbeats.
+# "0 0 * * SAT" — Saturday 00:00 UTC: purge all games older than 7 days.
+crons = ["* * * * *", "0 0 * * SAT"]
 
 # Per-user, per-endpoint sliding-window limit. Key is `${uid}:${pathname}`, so each endpoint
 # has its own budget for each authenticated caller. 120 / 60s = 2 req/s sustained; legitimate

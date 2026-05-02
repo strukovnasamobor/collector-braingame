@@ -11,7 +11,7 @@ import { closeCircleOutline } from 'ionicons/icons';
 import AppHeader from '../components/AppHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { useFirestoreGame } from '../hooks/useFirestoreGame';
-import { cancelCasualRoom } from '../services/firebaseActions';
+import { cancelStandardRoom } from '../services/firebaseActions';
 
 export default function WaitingRoom() {
   const { t } = useI18n();
@@ -32,7 +32,7 @@ export default function WaitingRoom() {
 
   const cancel = async () => {
     try {
-      await cancelCasualRoom({ code });
+      await cancelStandardRoom({ code });
     } catch (_) {}
     history.replace('/online/lobby');
   };

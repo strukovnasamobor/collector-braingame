@@ -48,7 +48,9 @@ function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
           <th>{t('leaderboard.rank')}</th>
           <th>{t('leaderboard.player')}</th>
           <th>{t('leaderboard.rating')}</th>
-          <th>{t('leaderboard.wdl')}</th>
+          <th className="sk-stat-cell">{t('leaderboard.wins_short')}</th>
+          <th className="sk-stat-cell">{t('leaderboard.draws_short')}</th>
+          <th className="sk-stat-cell">{t('leaderboard.losses_short')}</th>
         </tr>
       </thead>
       <tbody>
@@ -65,9 +67,9 @@ function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
             </td>
             <td className="sk-name-cell">{renderName(p)}</td>
             <td className="sk-rating-cell">{renderRating(p)}</td>
-            <td className="sk-wdl-cell">
-              {(p.wins ?? 0)} / {(p.draws ?? 0)} / {(p.losses ?? 0)}
-            </td>
+            <td className="sk-stat-cell">{p.wins ?? 0}</td>
+            <td className="sk-stat-cell">{p.draws ?? 0}</td>
+            <td className="sk-stat-cell">{p.losses ?? 0}</td>
           </tr>
         ))}
       </tbody>

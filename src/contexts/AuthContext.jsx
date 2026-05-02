@@ -4,10 +4,11 @@ import {
   onAuthStateChanged,
   signInWithCredential,
   signInWithPopup,
-  signOut as fbSignOut
+  signOut as fbSignOut,
+  updateProfile
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../firebase';
-import { ensurePlayerProfile } from '../services/firebaseActions';
+import { deleteUserProfile, ensurePlayerProfile, updateUserDisplayName } from '../services/firebaseActions';
 
 const AuthContext = createContext(null);
 
@@ -41,8 +42,17 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Tracked separately from `user.displayName` so a successful rename forces
+  // a re-render: Firebase mutates auth.currentUser.displayName in place,
+  // which would otherwise be invisible to React because the user object
+  // reference doesn't change.
+  const [displayName, setDisplayName] = useState(null);
   const oneTapInitialized = useRef(false);
   const oneTapResolveRef = useRef(null);
+
+  useEffect(() => {
+    setDisplayName(user?.displayName || null);
+  }, [user]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -175,8 +185,52 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Deletes the user's player profile + queue presence on the server, then
+  // signs out. Active games (involving the opponent) are intentionally
+  // preserved. Firebase Auth account itself is left intact — signing back
+  // in creates a fresh player doc at default rating.
+  const deleteAccount = useCallback(async () => {
+    try {
+      await deleteUserProfile();
+    } catch (e) {
+      // Even if the server call fails, fall through to sign-out so the user
+      // is at least no longer authenticated locally.
+      console.warn('Profile delete failed:', e?.code || e?.message || 'unknown');
+    }
+    await fbSignOut(auth);
+    if (window.google?.accounts?.id) {
+      try {
+        window.google.accounts.id.disableAutoSelect();
+      } catch (_) {}
+    }
+  }, []);
+
+  // Renames the signed-in user. Updates three things in order:
+  //   1. Firebase Auth profile (so future ID tokens carry the new name and
+  //      the worker's auto-sync on enqueue won't undo this rename).
+  //   2. ID token refresh (forces the next backend call to see the new name).
+  //   3. Worker's players/<uid>.displayName (so the leaderboard reflects it
+  //      immediately, without waiting for the next ranked match).
+  const updateDisplayName = useCallback(async (rawName) => {
+    const u = auth.currentUser;
+    if (!u) throw new Error('Not signed in.');
+    const trimmed = (rawName || '').trim().slice(0, 32);
+    if (!trimmed) throw new Error('Display name cannot be empty.');
+    await updateProfile(u, { displayName: trimmed });
+    try {
+      await u.getIdToken(true);
+    } catch (e) {
+      // Best-effort; the worker will pick up the new name on the next refresh.
+    }
+    await updateUserDisplayName({ displayName: trimmed });
+    setDisplayName(trimmed);
+    return trimmed;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, error, signIn, signOut, promptOneTap }}>
+    <AuthContext.Provider
+      value={{ user, loading, error, displayName, signIn, signOut, promptOneTap, updateDisplayName, deleteAccount }}
+    >
       {children}
     </AuthContext.Provider>
   );

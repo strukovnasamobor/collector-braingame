@@ -18,7 +18,10 @@
     "theme_light": "Light mode",
     "theme_dark": "Dark mode",
     "language_en": "English",
-    "language_hr": "Hrvatski"
+    "language_hr": "Hrvatski",
+    "change_language": "Set language",
+    "change_name": "Change name",
+    "delete_account": "Delete account"
   },
   "auth": {
     "title": "Sign In",
@@ -30,13 +33,13 @@
   },
   "lobby": {
     "sign_out": "Sign out",
-    "create_casual": "Casual Game",
+    "create_standard": "Standard Game",
     "create_ranked": "Ranked Game",
     "join_game": "Join Game",
     "online_leaderboard": "Leaderboard",
     "back": "Back",
     "game_options": "Create Game",
-    "casual_mode": "Casual Mode - Select Options",
+    "standard_mode": "Standard Mode - Options",
     "ranked_mode": "Ranked Mode\n8×8 Board with 30s Timer",
     "grid_size": "Board Size",
     "timer_label": "Play with timer (30s per move)",
@@ -52,10 +55,16 @@
     "matchmaking_title": "Matchmaking",
     "matchmaking_searching": "Searching for an opponent...",
     "matchmaking_ranked": "Ranked queue",
-    "matchmaking_casual": "Casual queue",
+    "matchmaking_standard": "Standard queue",
     "matchmaking_error": "Failed to start matchmaking. Please try again.",
     "stop_search_title": "Stop searching?",
-    "stop_search_message": "Are you sure you want to stop finding an opponent and leave the queue?"
+    "stop_search_message": "Are you sure you want to stop finding an opponent and leave the queue?",
+    "rename_title": "Change display name",
+    "rename_placeholder": "New display name",
+    "save_button": "Save",
+    "delete_account_title": "Delete account?",
+    "delete_account_message": "This will permanently erase your profile and rating, remove you from the leaderboard, and sign you out. This action cannot be undone.",
+    "delete_button": "Delete"
   },
   "game": {
     "new_game_dialog": "New Game",
@@ -102,6 +111,9 @@
     "player": "Player",
     "rating": "Rating",
     "wdl": "W / D / L",
+    "wins_short": "W",
+    "draws_short": "D",
+    "losses_short": "L",
     "empty_local": "No saved players.",
     "empty_online": "No online players yet.",
     "local_section": "Local",
@@ -125,8 +137,8 @@
         "text": "Your score is the size of your largest connected group of dots."
       },
       {
-        "title": "4. Casual mode",
-        "text": "Casual games let you choose the board size and timer. You can also create or join rooms manually."
+        "title": "4. Standard mode",
+        "text": "Standard games let you choose the board size and timer. You can also create or join rooms manually."
       },
       {
         "title": "5. Ranked mode",

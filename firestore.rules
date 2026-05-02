@@ -22,7 +22,7 @@ service cloud.firestore {
       allow read: if isPlayerInGame(resource.data)
         || (
           isSignedIn()
-          && resource.data.mode == 'casual'
+          && resource.data.mode == 'standard'
           && resource.data.source == 'room'
           && resource.data.status == 'waiting'
         );
@@ -36,7 +36,7 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    match /matchmakingQueue_casual/{userId} {
+    match /matchmakingQueue_standard/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
       allow create, update, delete: if false;
     }

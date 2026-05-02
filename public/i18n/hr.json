@@ -18,7 +18,10 @@
     "theme_light": "Svijetli način",
     "theme_dark": "Tamni način",
     "language_en": "English",
-    "language_hr": "Hrvatski"
+    "language_hr": "Hrvatski",
+    "change_language": "Postavi jezik",
+    "change_name": "Promijeni ime",
+    "delete_account": "Obriši račun"
   },
   "auth": {
     "title": "Prijava",
@@ -30,13 +33,13 @@
   },
   "lobby": {
     "sign_out": "Odjava",
-    "create_casual": "Casual igra",
+    "create_standard": "Standardna igra",
     "create_ranked": "Rangirana igra",
     "join_game": "Pridruži se",
     "online_leaderboard": "Ljestvica",
     "back": "Natrag",
     "game_options": "Postavke igre",
-    "casual_mode": "Casual igra - Opcije",
+    "standard_mode": "Standardna igra - Opcije",
     "ranked_mode": "Rangirana igra\n8×8 ploča, 30s po potezu",
     "grid_size": "Veličina ploče",
     "timer_label": "Igra s mjeračem vremena (30s po potezu)",
@@ -52,10 +55,16 @@
     "matchmaking_title": "Matchmaking",
     "matchmaking_searching": "Traženje protivnika...",
     "matchmaking_ranked": "Ranked red čekanja",
-    "matchmaking_casual": "Casual red čekanja",
+    "matchmaking_standard": "Standardni red čekanja",
     "matchmaking_error": "Neuspjelo pokretanje matchmakinga. Pokušajte ponovno.",
     "stop_search_title": "Prekini traženje?",
-    "stop_search_message": "Jeste li sigurni da želite prestati tražiti protivnika i izaći iz reda?"
+    "stop_search_message": "Jeste li sigurni da želite prestati tražiti protivnika i izaći iz reda?",
+    "rename_title": "Promijeni prikazno ime",
+    "rename_placeholder": "Novo prikazno ime",
+    "save_button": "Spremi",
+    "delete_account_title": "Obriši račun?",
+    "delete_account_message": "Ovo će trajno obrisati vaš profil i rejting, ukloniti vas s ljestvice i odjaviti vas. Ova radnja ne može se poništiti.",
+    "delete_button": "Obriši"
   },
   "game": {
     "new_game_dialog": "Nova igra",
@@ -102,6 +111,9 @@
     "player": "Igrač",
     "rating": "Rejting",
     "wdl": "P / N / G",
+    "wins_short": "P",
+    "draws_short": "N",
+    "losses_short": "G",
     "empty_local": "Nema spremljenih igrača.",
     "empty_online": "Još nema online igrača.",
     "local_section": "Lokalno",
@@ -125,8 +137,8 @@
         "text": "Rezultat je veličina vaše najveće povezane grupe točaka."
       },
       {
-        "title": "4. Casual mod",
-        "text": "Casual igre dopuštaju izbor veličine ploče i mjerača vremena. Također možete ručno stvarati ili se pridružiti sobama."
+        "title": "4. Standardna igra",
+        "text": "Standardne igre dopuštaju izbor veličine ploče i mjerača vremena. Također možete ručno stvarati ili se pridružiti sobama."
       },
       {
         "title": "5. Ranked mod",

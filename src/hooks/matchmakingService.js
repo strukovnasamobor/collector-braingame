@@ -7,7 +7,7 @@ import { enqueueForMatch as enqueueForMatchCall, runMatchmaker as runMatchmakerC
 import { validateGame as validateGameCall } from '../services/firebaseActions';
 
 function queueCollectionForMode(mode) {
-    return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_casual';
+    return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_standard';
 }
 
 export async function enqueueForMatch({ user, mode, gridSize = 8, timerEnabled = false }) {

@@ -43,11 +43,11 @@ const MAX_MU = 5000;
 const MAX_DISPLAY_RATING = 9999;
 const MATCHMAKING_STALE_MS_BY_MODE = {
   ranked: 25 * 1000,
-  casual: 30 * 1000
+  standard: 30 * 1000
 };
 const MATCHMAKING_STALE_MS = 30 * 1000;
 const STALE_GAME_THRESHOLD_MS = 60 * 1000;
-const STALE_CASUAL_GAME_THRESHOLD_MS = 5 * 60 * 1000;
+const STALE_STANDARD_GAME_THRESHOLD_MS = 5 * 60 * 1000;
 const TURN_DURATION_MS = 30 * 1000;
 // Clients submit moves via the worker, which adds RTT. 2s covers normal jitter while keeping
 // the post-deadline abuse window small (was 5s, which let fast clients steal a free turn).
@@ -188,11 +188,11 @@ function isAllowedEmail(email) {
 }
 
 function normalizeMode(mode) {
-  return mode === 'ranked' ? 'ranked' : 'casual';
+  return mode === 'ranked' ? 'ranked' : 'standard';
 }
 
 function matchmakingCollection(mode) {
-  return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_casual';
+  return mode === 'ranked' ? 'matchmakingQueue_ranked' : 'matchmakingQueue_standard';
 }
 function buildPlayerName(entry) {
   return entry.displayName || 'Player';
@@ -891,6 +891,42 @@ async function handleProfileEnsure(env, authUser) {
   return corsResponse({ ok: true, profile });
 }
 
+// Hard delete of the signed-in user's data: removes their player profile
+// (which is what the leaderboard reads) plus any leftover queue presence.
+// Active games are deliberately NOT deleted — the opponent may still be
+// playing; their game doc just keeps the historical names. After this, the
+// client signs out. If the user signs back in later, ensurePlayerDoc will
+// create a fresh player doc at default rating.
+async function handleProfileDelete(env, authUser) {
+  try { await deleteDocument(env, 'matchmakingQueue_ranked', authUser.uid); } catch (_) {}
+  try { await deleteDocument(env, 'matchmakingQueue_standard', authUser.uid); } catch (_) {}
+  try { await deleteDocument(env, 'players', authUser.uid); } catch (_) {}
+  return corsResponse({ ok: true });
+}
+
+// Lets a signed-in user override the auto-synced Google name with one of
+// their own. Writes the sanitised name straight onto players/<uid> so the
+// leaderboard reflects it immediately. Firebase Auth's profile is updated
+// client-side (via updateProfile) so the next ID token also carries the
+// new name and the auto-sync on enqueue doesn't undo this rename.
+async function handleProfileUpdateName(env, authUser, body) {
+  const requested = clampDisplayName(body?.displayName || '');
+  if (!requested) {
+    return errorResponse('Display name is required.', 400);
+  }
+  const playerRef = await getDocument(env, 'players', authUser.uid);
+  if (!playerRef) {
+    return errorResponse('Profile not found. Sign in again to initialise.', 404);
+  }
+  const next = {
+    ...playerRef.data,
+    displayName: requested,
+    updatedAt: new Date().toISOString()
+  };
+  await writeDocument(env, 'players', authUser.uid, next);
+  return corsResponse({ ok: true, displayName: requested });
+}
+
 async function handleRoomAction(env, authUser, body) {
   const action = String(body.action || '');
   const displayName = clampDisplayName(authUser.name || 'Player');
@@ -901,7 +937,7 @@ async function handleRoomAction(env, authUser, body) {
     const gameId = `game_${code}`;
     await writeDocument(env, 'games', gameId, {
       gameCode: code,
-      mode: 'casual',
+      mode: 'standard',
       source: 'room',
       status: 'waiting',
       player1uid: authUser.uid,
@@ -929,7 +965,7 @@ async function handleRoomAction(env, authUser, body) {
     const game = await getDocument(env, 'games', gameId);
     if (!game) return errorResponse('Room not found.', 404);
     const current = game.data;
-    if (current.status !== 'waiting' || current.mode !== 'casual' || current.source !== 'room') {
+    if (current.status !== 'waiting' || current.mode !== 'standard' || current.source !== 'room') {
       return errorResponse('Room is not available.', 412);
     }
     if (current.player1uid === authUser.uid || current.player2uid === authUser.uid) {
@@ -995,7 +1031,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       // Best-effort: also remove any orphan queue entries this user might
       // still have in either mode collection.
       try { await deleteDocument(env, 'matchmakingQueue_ranked', authUser.uid); } catch (_) {}
-      try { await deleteDocument(env, 'matchmakingQueue_casual', authUser.uid); } catch (_) {}
+      try { await deleteDocument(env, 'matchmakingQueue_standard', authUser.uid); } catch (_) {}
       effectiveState = 'idle';
     }
     if (effectiveState !== 'idle' && effectiveState !== 'finished') {
@@ -1063,7 +1099,7 @@ async function handleMatchmakingAction(env, authUser, body) {
     const candidates = await queryQueueDocs(
       env,
       mode,
-      mode === 'casual'
+      mode === 'standard'
         ? { gridSize: Number(self.gridSize) || 6, timerEnabled: !!self.timerEnabled }
         : {}
     );
@@ -1094,7 +1130,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       // freshness check on humans.
       if (entry.data?.status !== 'searching') continue;
       if (!entryIsBot && (entry.data?.matchedWith || entry.data?.gameId)) continue;
-      if (mode === 'casual') {
+      if (mode === 'standard') {
         const candGrid = Number(entry.data.gridSize) || 6;
         const candTimer = !!entry.data.timerEnabled;
         if (candGrid !== selfGridSize || candTimer !== selfTimerEnabled) continue;
@@ -1172,7 +1208,7 @@ async function handleMatchmakingAction(env, authUser, body) {
     if (!candidateIsBot && (liveCandidate.gameId || liveCandidate.matchedWith)) {
       return corsResponse({ ok: true, gameId: null });
     }
-    if (mode === 'casual') {
+    if (mode === 'standard') {
       const liveSelfGrid = Number(liveSelf.data.gridSize) || 6;
       const liveSelfTimer = !!liveSelf.data.timerEnabled;
       const liveCandGrid = Number(liveCandidate.gridSize) || 6;
@@ -1869,6 +1905,12 @@ async function handleRequest(request, env) {
     return errorResponse('Too many requests. Please slow down.', 429);
   }
 
+  if (url.pathname === '/profile/update-name') {
+    return handleProfileUpdateName(env, authUser, body);
+  }
+  if (url.pathname === '/profile/delete') {
+    return handleProfileDelete(env, authUser);
+  }
   if (url.pathname === '/profile/ensure') {
     return handleProfileEnsure(env, authUser);
   }
@@ -1960,7 +2002,7 @@ async function sweepStaleGames(env) {
       continue;
     }
 
-    const cutoff = now - (isRanked ? STALE_GAME_THRESHOLD_MS : STALE_CASUAL_GAME_THRESHOLD_MS);
+    const cutoff = now - (isRanked ? STALE_GAME_THRESHOLD_MS : STALE_STANDARD_GAME_THRESHOLD_MS);
     const createdFloor = Number(data.createdAtMs) || Date.parse(data.createdAt || '') || now;
     const lastP1 = Number(data.lastSeenP1Ms) || createdFloor;
     const lastP2 = Number(data.lastSeenP2Ms) || createdFloor;
@@ -1979,11 +2021,11 @@ async function sweepStaleGames(env) {
 
     try {
       if (!isRanked || (p1Stale && p2Stale)) {
-        // Casual: always cancel (no rating consequence). Ranked w/ both silent: same.
+        // Standard: always cancel (no rating consequence). Ranked w/ both silent: same.
         const cancelledGame = {
           ...data,
           status: 'cancelled',
-          cancelledReason: isRanked ? 'both_abandoned' : 'casual_abandoned',
+          cancelledReason: isRanked ? 'both_abandoned' : 'standard_abandoned',
           cancelledAt: new Date().toISOString()
         };
         await writeDocument(env, 'games', game.id, cancelledGame, game.updateTime);
@@ -1998,6 +2040,73 @@ async function sweepStaleGames(env) {
       // Race: another writer (a leave call, a final move) beat us. Skip; next tick will reassess.
     }
   }
+}
+
+// Weekly purge: hard-delete every game whose createdAtMs is older than 7 days,
+// regardless of status. Uses Firestore batched `:commit` so a full page of 300
+// deletes costs one subrequest — well inside the Free plan's 50-subrequest cap
+// even with several pages. Loops until no rows remain or we hit the safety cap.
+async function purgeOldGames(env) {
+  const PURGE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const PAGE_SIZE = 300;
+  const MAX_PAGES = 20; // 20 × 300 = 6,000 docs max per cron run
+  const cutoff = Date.now() - PURGE_AGE_MS;
+  let totalDeleted = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let response;
+    try {
+      response = await firestoreFetch(env, ':runQuery', {
+        method: 'POST',
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'games' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'createdAtMs' },
+                op: 'LESS_THAN',
+                value: { integerValue: String(cutoff) }
+              }
+            },
+            limit: PAGE_SIZE
+          }
+        })
+      });
+    } catch (err) {
+      console.error('[purgeOldGames] runQuery threw', err?.message);
+      break;
+    }
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error(`[purgeOldGames] runQuery ${response.status}: ${txt}`);
+      break;
+    }
+    const rows = await response.json();
+    const docs = rows.map((r) => r.document).filter(Boolean);
+    if (docs.length === 0) break;
+
+    const writes = docs.map((d) => ({ delete: d.name }));
+    try {
+      const commit = await firestoreFetch(env, ':commit', {
+        method: 'POST',
+        body: JSON.stringify({ writes })
+      });
+      if (!commit.ok) {
+        const txt = await commit.text();
+        console.error(`[purgeOldGames] commit ${commit.status}: ${txt}`);
+        break;
+      }
+      totalDeleted += writes.length;
+    } catch (err) {
+      console.error('[purgeOldGames] commit threw', err?.message);
+      break;
+    }
+
+    // Page returned fewer than PAGE_SIZE → no more matches; stop early.
+    if (docs.length < PAGE_SIZE) break;
+  }
+
+  console.log(`[purgeOldGames] done — deleted ${totalDeleted} games older than 7 days (cutoff=${cutoff})`);
 }
 
 // Wrap a Response to apply the validated CORS origin. Inner handlers always emit
@@ -2155,6 +2264,13 @@ export default {
     return applyCorsOrigin(response, allowOrigin);
   },
   async scheduled(event, env, ctx) {
+    // Dispatch by cron expression so the per-minute heartbeat job and the
+    // weekly purge stay independent. event.cron is the literal pattern from
+    // wrangler.toml that triggered this invocation.
+    if (event.cron === '0 0 * * SAT') {
+      ctx.waitUntil(purgeOldGames(env));
+      return;
+    }
     ctx.waitUntil(sweepStaleGames(env));
     ctx.waitUntil(seedBots(env, { getDocument, writeDocument }));
   }
