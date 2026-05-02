@@ -9,11 +9,6 @@ import {
   EVAL_BASIC_MATERIAL,
   EVAL_BASIC_LIBERTY,
   EVAL_BASIC_NEUTRAL_PEN,
-  EVAL_RICH_MATERIAL,
-  EVAL_RICH_LIBERTY,
-  EVAL_RICH_SECONDARY,
-  EVAL_RICH_NEUTRAL_PEN,
-  EVAL_RICH_CUT_BONUS,
   MCTS_C,
   RAVE_K,
   PW_ALPHA,
@@ -284,13 +279,7 @@ function biggestGroupSizeAndFrontier(player) {
   return { size: bestSize, frontier };
 }
 
-function totalDots(player) {
-  let n = 0;
-  for (let i = 0; i < N2; i++) if (cells[i] === player) n++;
-  return n;
-}
-
-// ── Eval helpers (used by basic + rich evals) ──────────────────────────────
+// ── Eval helpers ───────────────────────────────────────────────────────────
 // Empty/non-dead cells 8-adjacent to ANY of player's dots, de-duplicated.
 function totalLiberties(player) {
   let n = 0;
@@ -336,17 +325,6 @@ function neutralAdjacentToOwn(player) {
   return n;
 }
 
-// Sum over dead cells of own-dot 8-neighbours of `victim`. Higher = neutrals
-// are landing right next to victim's dots, breaking their potential connections.
-function cutScore(victim) {
-  let s = 0;
-  for (let i = 0; i < N2; i++) {
-    if (!dead[i]) continue;
-    s += countAdjacentDots(i, victim);
-  }
-  return s;
-}
-
 // ── Eval variants ──────────────────────────────────────────────────────────
 function evalSimple() {
   return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
@@ -365,29 +343,9 @@ function evalBasic() {
        - EVAL_BASIC_NEUTRAL_PEN * (myNeut - opNeut);
 }
 
-function evalRich() {
-  const opp = side === 1 ? 2 : 1;
-  const my = biggestGroupSizeAndFrontier(side);
-  const op = biggestGroupSizeAndFrontier(opp);
-  const myLib = totalLiberties(side);
-  const opLib = totalLiberties(opp);
-  const myNeut = neutralAdjacentToOwn(side);
-  const opNeut = neutralAdjacentToOwn(opp);
-  const mySec = totalDots(side) - my.size;
-  const opSec = totalDots(opp) - op.size;
-  const cutMe = cutScore(opp);   // dead cells blocking opp's growth
-  const cutOp = cutScore(side);  // dead cells blocking my growth
-  return EVAL_RICH_MATERIAL    * (my.size - op.size)
-       + EVAL_RICH_LIBERTY     * (myLib  - opLib)
-       + EVAL_RICH_SECONDARY   * (mySec  - opSec)
-       + EVAL_RICH_CUT_BONUS   * (cutMe  - cutOp)
-       - EVAL_RICH_NEUTRAL_PEN * (myNeut - opNeut);
-}
-
 const EVAL_BY_NAME = {
   simple: evalSimple,
-  basic: evalBasic,
-  rich: evalRich
+  basic: evalBasic
 };
 
 function evaluate() { return currentEval(); }
@@ -580,20 +538,6 @@ function searchRoot(depth) {
     if (v > best) { best = v; bestMove = m; }
   }
   return { bestMove, bestValue: best, scores };
-}
-
-function rootIDAB(budgetMs, maxDepth) {
-  deadline = performance.now() + budgetMs;
-  timedOut = false;
-  const cap = Math.min(MAX_DEPTH, maxDepth || MAX_DEPTH);
-  let lastGood = null;
-  for (let depth = 1; depth <= cap; depth++) {
-    const r = searchRoot(depth);
-    if (timedOut) break;
-    lastGood = r;
-    if (r && Math.abs(r.bestValue) >= WIN_MAG) break;
-  }
-  return lastGood;
 }
 
 function runFixedAB(depth, timeMsCap) {
@@ -1020,7 +964,7 @@ function countEmpty() {
 
 function chooseMove(cfg) {
   // Set the eval pointer for tiers that use one
-  currentEval = EVAL_BY_NAME[cfg.evalName] || evalRich;
+  currentEval = EVAL_BY_NAME[cfg.evalName] || evalBasic;
 
   if (cfg.kind === 'oneply') {
     const r = runOnePly();
@@ -1028,15 +972,6 @@ function chooseMove(cfg) {
   }
   if (cfg.kind === 'fixedab') {
     const r = runFixedAB(cfg.depth, cfg.timeMs);
-    return pickEps(r?.scores, 0, 0);
-  }
-  if (cfg.kind === 'idab') {
-    if (cfg.endgame && countEmpty() <= ENDGAME_THRESHOLD) {
-      const eg = runEndgame();
-      if (eg) return pickEps(eg.scores, 0, 0);
-      // fall through to IDAB if endgame solver timed out
-    }
-    const r = rootIDAB(cfg.budgetMs, cfg.maxDepth);
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {

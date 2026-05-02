@@ -1,5 +1,4 @@
-- test AI and add Expert (AlphaZero)
-? online AI or/and offline AI
+- online AI
 
 Ver. 1.0 (1)
 - remove printing logs
@@ -10,11 +9,15 @@ Ver. 1.0 (1)
 - check readme file link to google play store
 
 AI TIERS
-beginner: { kind: 'oneply',   evalName: 'simple' }, expected 1000-1500 ratings
-novice:   { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 }, expected 1500-2000 ratings
-expert:   { kind: 'idab',     budgetMs: 6000, maxDepth: 9, evalName: 'rich', endgame: true }, expected 2000-2500 ratings
-master:   { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }, expected 2500-3000 ratings
-grandmaster - AlphaZero
+1. Seeker - Tragač: { kind: 'oneply',   evalName: 'simple' }
+2. Hunter - Lovac: { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 }
+3. Collector - Sakupljač: { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }
+
+ONLINE AI TIERS
+1. Seeker
+2. Hunter
+3. Collector
+ToDo: 4. Master Collector - AlphaZero
 
 12 x 12 BOARD
 #	Word		    P	B	C/B	T

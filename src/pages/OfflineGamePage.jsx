@@ -39,22 +39,21 @@ export default function OfflineGamePage() {
 
   const { registerExit, clearExit } = useGameExit();
 
-  const humanPlayers = useMemo(() => {
+  const watchPlayers = useMemo(() => {
     if (!config) return [];
+    // Celebrations fire only for a human player whose opponent is the Collector
+    // AI tier — earning a milestone against the strongest AI is the reward
+    // signal. Human-vs-human, human-vs-weaker-AI, and AI-vs-AI stay silent.
     const list = [];
-    if (!config.player1AI) list.push(1);
-    if (!config.player2AI) list.push(2);
-    // Suppress milestone messages + chimes in offline human-vs-human and
-    // AI-vs-AI matches. Only the lone human in a human-vs-AI game gets
-    // celebrations — making them a personal reward, not background noise.
-    if (list.length !== 1) return [];
+    if (!config.player1AI && config.player2AI === 'collector') list.push(1);
+    if (!config.player2AI && config.player1AI === 'collector') list.push(2);
     return list;
   }, [config]);
 
   const { event: milestoneEvent, dismiss: dismissMilestone } = useGroupMilestones({
     scores,
     matchKey: matchId,
-    watchPlayers: humanPlayers,
+    watchPlayers,
     enabled: !!config,
     gridSize: config?.gridSize
   });
