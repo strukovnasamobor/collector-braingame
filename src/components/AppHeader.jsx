@@ -161,8 +161,8 @@ export default function AppHeader({ title }) {
                 <IonLabel>{t('menu.change_name')}</IonLabel>
               </IonItem>
               <IonItem button detail={false} onClick={handleDeleteClick}>
-                <IonIcon slot="start" icon={trashOutline} color="danger" />
-                <IonLabel color="danger">{t('menu.delete_account')}</IonLabel>
+                <IonIcon slot="start" icon={trashOutline} />
+                <IonLabel>{t('menu.delete_account')}</IonLabel>
               </IonItem>
               <IonItem button detail={false} onClick={handleSignOutClick}>
                 <IonIcon slot="start" icon={logOutOutline} />
@@ -211,9 +211,10 @@ export default function AppHeader({ title }) {
         isOpen={deleteOpen}
         header={t('lobby.delete_account_title')}
         message={t('lobby.delete_account_message')}
+        cssClass="sk-alert-delete"
         buttons={[
           { text: t('lobby.cancel_button'), role: 'cancel' },
-          { text: t('lobby.delete_button'), role: 'destructive', handler: handleDeleteConfirmed }
+          { text: t('lobby.delete_button'), role: 'destructive', cssClass: 'sk-alert-delete-btn', handler: handleDeleteConfirmed }
         ]}
         onDidDismiss={() => setDeleteOpen(false)}
       />

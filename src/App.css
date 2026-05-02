@@ -587,6 +587,12 @@ ion-content.sk-game-content::part(scroll) {
   }
 }
 
+/* Delete-account confirmation alert — destructive button in red. */
+.sk-alert-delete .sk-alert-delete-btn {
+  color: #dc3545 !important;
+  font-weight: 700;
+}
+
 /* Header tweaks */
 .sk-header-title {
   background: linear-gradient(45deg, #dc3545, #007bff);
