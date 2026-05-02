@@ -440,6 +440,10 @@ body.dark .sk-turn-timer {
   border-bottom: 2px solid var(--sk-cell-border);
 }
 
+.sk-leaderboard-table th:first-child {
+  text-align: center;
+}
+
 .sk-leaderboard-table td {
   padding: 9px 12px;
   border-bottom: 1px solid var(--sk-cell-border);
@@ -453,6 +457,7 @@ body.dark .sk-turn-timer {
   font-weight: 700;
   width: 32px;
   color: var(--sk-user-bar-color);
+  text-align: center;
 }
 
 .sk-top-1 .sk-rank-cell {
@@ -465,6 +470,13 @@ body.dark .sk-turn-timer {
 
 .sk-top-3 .sk-rank-cell {
   color: #c47d3e;
+}
+
+/* Medal emoji slightly larger than the rank number text so it reads as
+ * a medal rather than a generic glyph. line-height keeps the row tall. */
+.sk-rank-medal {
+  font-size: 1.4em;
+  line-height: 1;
 }
 
 .sk-name-cell {

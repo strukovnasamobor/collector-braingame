@@ -9,6 +9,34 @@ import AppHeader from '../components/AppHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { db } from '../../firebase';
 
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+// Tiebreaker chain: rating desc → win-ratio desc → wins desc →
+// losses asc → most-recent-activity desc.
+function rankCompare(a, b) {
+  const aR = Number(a.rating || 0);
+  const bR = Number(b.rating || 0);
+  if (aR !== bR) return bR - aR;
+
+  const aGames = Number(a.games || 0);
+  const bGames = Number(b.games || 0);
+  const aRatio = aGames > 0 ? Number(a.wins || 0) / aGames : 0;
+  const bRatio = bGames > 0 ? Number(b.wins || 0) / bGames : 0;
+  if (aRatio !== bRatio) return bRatio - aRatio;
+
+  const aW = Number(a.wins || 0);
+  const bW = Number(b.wins || 0);
+  if (aW !== bW) return bW - aW;
+
+  const aL = Number(a.losses || 0);
+  const bL = Number(b.losses || 0);
+  if (aL !== bL) return aL - bL;
+
+  const aT = Date.parse(a.updatedAt || '') || 0;
+  const bT = Date.parse(b.updatedAt || '') || 0;
+  return bT - aT;
+}
+
 function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
   if (!rows || rows.length === 0) {
     return <p style={{ textAlign: 'center', marginTop: 24 }}>{empty}</p>;
@@ -26,7 +54,15 @@ function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
       <tbody>
         {rows.map((p, i) => (
           <tr key={keyFn(p)} className={i < 3 ? `sk-top-${i + 1}` : ''}>
-            <td className="sk-rank-cell">{i + 1}</td>
+            <td className="sk-rank-cell">
+              {i < MEDALS.length ? (
+                <span className="sk-rank-medal" aria-label={`Rank ${i + 1}`}>
+                  {MEDALS[i]}
+                </span>
+              ) : (
+                i + 1
+              )}
+            </td>
             <td className="sk-name-cell">{renderName(p)}</td>
             <td className="sk-rating-cell">{renderRating(p)}</td>
             <td className="sk-wdl-cell">
@@ -57,6 +93,10 @@ export default function LeaderboardPage() {
       (snap) => {
         const arr = [];
         snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
+        // Firestore can only orderBy a single field cheaply. Apply the full
+        // tiebreaker chain client-side so equal-rating rows resolve by
+        // win-ratio, then total wins, then fewest losses, then recency.
+        arr.sort(rankCompare);
         setOnlinePlayers(arr);
         setLoading(false);
       },
