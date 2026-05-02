@@ -2056,50 +2056,82 @@ export class MatchBot {
   }
 
   async alarm() {
+    // ── Diagnostic instrumentation ──
+    // All logs prefixed with [MatchBot:gameId:tier] so `wrangler tail` can be
+    // grepped by gameId. Strip these once the Collector hang on Free CPU is
+    // fully diagnosed.
+    const alarmStart = Date.now();
     const cfg = await this.state.storage.get('cfg');
-    if (!cfg) return; // already cleaned up
+    if (!cfg) {
+      console.log('[MatchBot] alarm fired with no cfg — DO already cleaned');
+      return;
+    }
+    const tag = `[MatchBot:${cfg.gameId.slice(-6)}:${cfg.tier}]`;
 
     let game;
+    const readStart = Date.now();
     try {
       game = await getDocument(this.env, 'games', cfg.gameId);
-    } catch (_) {
-      // Transient firestore error — try again shortly.
+    } catch (err) {
+      console.warn(`${tag} firestore read FAILED`, err?.message);
       await this.state.storage.setAlarm(Date.now() + 1500);
       return;
     }
+    const readMs = Date.now() - readStart;
 
     if (!game || game.data?.status !== 'active') {
-      // Game ended (finished, cancelled, or doc gone). Stop scheduling.
+      console.log(`${tag} game ended (${game?.data?.status || 'missing'}) — DO cleanup`);
       await this.state.storage.deleteAll();
       return;
     }
 
     if (game.data.currentPlayer !== cfg.botPlayerNumber) {
-      // Human's turn — poll again shortly.
+      console.log(`${tag} not my turn (current=${game.data.currentPlayer}, me=${cfg.botPlayerNumber}) — re-poll in 1500ms (read ${readMs}ms)`);
       await this.state.storage.setAlarm(Date.now() + 1500);
       return;
     }
 
+    console.log(`${tag} MY TURN phase=${game.data.phase} — starting search (read ${readMs}ms)`);
+
     // Bot's turn. Build engine input from the live Firestore state.
     const size = parseGridSize(game.data.gridSize);
     const state = normalizeGameState(game.data.gameStateJSON, size);
-    const move = chooseBotMove({
-      tier: cfg.tier,
-      state,
-      size,
-      phase: game.data.phase,
-      lastPlaces: game.data.lastPlaces,
-      currentPlayer: cfg.botPlayerNumber
-    });
+
+    const searchStart = Date.now();
+    let move = null;
+    let searchError = null;
+    try {
+      move = await chooseBotMove({
+        tier: cfg.tier,
+        state,
+        size,
+        phase: game.data.phase,
+        lastPlaces: game.data.lastPlaces,
+        currentPlayer: cfg.botPlayerNumber
+      });
+    } catch (err) {
+      searchError = err;
+    }
+    const searchMs = Date.now() - searchStart;
+
+    if (searchError) {
+      console.error(`${tag} chooseBotMove THREW after ${searchMs}ms:`, searchError?.message, searchError?.stack);
+    } else if (!move) {
+      console.warn(`${tag} chooseBotMove returned NULL after ${searchMs}ms (phase=${game.data.phase}, gridSize=${size})`);
+    } else {
+      console.log(`${tag} chooseBotMove → ${move.row},${move.col} after ${searchMs}ms`);
+    }
 
     if (move) {
+      const applyStart = Date.now();
       try {
         await applyMoveInternal(this.env, cfg.botUid, cfg.gameId, move.row, move.col);
+        console.log(`${tag} move APPLIED in ${Date.now() - applyStart}ms (total alarm ${Date.now() - alarmStart}ms)`);
       } catch (err) {
-        console.warn('MatchBot move rejected', cfg.gameId, err?.message);
-        // Don't abort — re-poll. A 412 (state changed) commonly means an
-        // optimistic-concurrency miss; the next read picks up the new state.
+        console.warn(`${tag} applyMoveInternal REJECTED:`, err?.message);
       }
+    } else {
+      console.warn(`${tag} skipping apply — no move (alarm total ${Date.now() - alarmStart}ms)`);
     }
 
     await this.state.storage.setAlarm(Date.now() + 800);

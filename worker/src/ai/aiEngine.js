@@ -713,6 +713,121 @@ function makeMctsNode(parent, move, toMove, nodePhase) {
   };
 }
 
+// ── reuseTree: persistent search tree across consecutive chooseAIMove calls ──
+// At the end of each MCTS search we snapshot root + cells/dead/phase/side.
+// On the next call we diff cells/dead vs the snapshot to identify the moves
+// played in the interim, walk the tree down those moves, and adopt the
+// resulting node as the new root — inheriting all the simulation work.
+//
+// Best-effort: if any played move wasn't expanded in the stored tree (PW
+// limit, low visits, or different game), we silently fall back to a fresh
+// tree. Module globals persist across calls in both browser Web Workers and
+// Cloudflare DO instances within their warm lifetime.
+let prevRoot = null;
+let prevCellsSnap = null;
+let prevDeadSnap = null;
+let prevPhaseSnap = 0;
+let prevSideSnap = 0;
+let prevLastIdxSnap = -1;
+let prevSizeSnap = 0;
+
+function discardReuseSnapshot() {
+  prevRoot = null;
+  prevCellsSnap = null;
+  prevDeadSnap = null;
+  prevSizeSnap = 0;
+}
+
+function _findAdjacentDead(centerIdx, deadIdxs, used) {
+  if (centerIdx < 0) return -1;
+  const cr = (centerIdx / size) | 0;
+  const cc = centerIdx - cr * size;
+  for (let i = 0; i < deadIdxs.length; i++) {
+    if (used[i]) continue;
+    const d = deadIdxs[i];
+    const dr = (d / size) | 0;
+    const dc = d - dr * size;
+    const adr = Math.abs(dr - cr);
+    const adc = Math.abs(dc - cc);
+    if (adr <= 1 && adc <= 1 && (adr !== 0 || adc !== 0)) {
+      used[i] = 1;
+      return d;
+    }
+  }
+  return -1;
+}
+
+function _computeMoveSequenceForReuse() {
+  const newDots = [];
+  const newDeadIdxs = [];
+  for (let i = 0; i < N2; i++) {
+    const wasDot = prevCellsSnap[i] !== 0;
+    const isDot = cells[i] !== 0;
+    if (wasDot && !isDot) return null;
+    if (wasDot && isDot && prevCellsSnap[i] !== cells[i]) return null;
+    if (!wasDot && isDot) newDots.push({ idx: i, player: cells[i] });
+    const wasDead = !!prevDeadSnap[i];
+    const isDead = !!dead[i];
+    if (wasDead && !isDead) return null;
+    if (!wasDead && isDead) newDeadIdxs.push(i);
+  }
+  if (newDots.length === 0 && newDeadIdxs.length === 0) return [];
+
+  const otherSide = prevSideSnap === 1 ? 2 : 1;
+  let myDot = null;
+  let oppDot = null;
+  for (const d of newDots) {
+    if (d.player === prevSideSnap && !myDot) myDot = d;
+    else if (d.player === otherSide && !oppDot) oppDot = d;
+  }
+  for (const d of newDots) if (d !== myDot && d !== oppDot) return null;
+
+  const usedDead = new Uint8Array(newDeadIdxs.length);
+  const moves = [];
+  if (prevPhaseSnap === PLACE) {
+    if (myDot) {
+      moves.push(myDot.idx);
+      const myDead = _findAdjacentDead(myDot.idx, newDeadIdxs, usedDead);
+      if (myDead >= 0) moves.push(myDead);
+    }
+    if (oppDot) {
+      moves.push(oppDot.idx);
+      const oppDead = _findAdjacentDead(oppDot.idx, newDeadIdxs, usedDead);
+      if (oppDead >= 0) moves.push(oppDead);
+    }
+  } else {
+    if (prevLastIdxSnap >= 0) {
+      const myDead = _findAdjacentDead(prevLastIdxSnap, newDeadIdxs, usedDead);
+      if (myDead >= 0) moves.push(myDead);
+    }
+    if (oppDot) {
+      moves.push(oppDot.idx);
+      const oppDead = _findAdjacentDead(oppDot.idx, newDeadIdxs, usedDead);
+      if (oppDead >= 0) moves.push(oppDead);
+    }
+  }
+  for (let i = 0; i < usedDead.length; i++) if (!usedDead[i]) return null;
+  return moves;
+}
+
+function _navigateTreeForReuse() {
+  if (!prevRoot || !prevCellsSnap || prevSizeSnap !== size) return null;
+  const moves = _computeMoveSequenceForReuse();
+  if (moves === null) return null;
+  let node = prevRoot;
+  for (let i = 0; i < moves.length; i++) {
+    if (!node.children || node.children.length === 0) return null;
+    let found = null;
+    for (let j = 0; j < node.children.length; j++) {
+      if (node.children[j].move === moves[i]) { found = node.children[j]; break; }
+    }
+    if (!found) return null;
+    node = found;
+  }
+  if (node.toMove !== side || node.phase !== phase) return null;
+  return node;
+}
+
 // Shared scratch for moveBuf generation during MCTS expansion (no recursion).
 let mctsGenBuf = null;
 
@@ -918,25 +1033,69 @@ function runOneMctsSim(root) {
   }
 }
 
-function runMCTSRave(cfg) {
-  const root = makeMctsNode(null, -1, side, phase);
+// ASYNC: yields to the event loop every BATCH_SIZE simulations so that
+// (a) Cloudflare's Date.now() actually advances and the timeMs budget becomes
+// enforceable, and (b) the runtime gets a chance to flush pending I/O. Each
+// yield costs ~1 ms wall but is essential — without it `performance.now()`
+// stays frozen during the whole sync loop and timeMs is purely advisory.
+const MCTS_YIELD_BATCH = 1000;
+
+async function runMCTSRave(cfg) {
+  const wallStart = Date.now();
+
+  // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
+  // is set and we have a saved snapshot from the previous call.
+  let root = null;
+  let reused = false;
+  if (cfg.reuseTree && prevRoot) {
+    const navigated = _navigateTreeForReuse();
+    if (navigated) {
+      root = navigated;
+      root.parent = null;        // detach from old tree so siblings can GC
+      reused = true;
+    } else {
+      discardReuseSnapshot();
+    }
+  }
+  if (!reused) root = makeMctsNode(null, -1, side, phase);
+
+  // AMAF tables reset each call. Stale entries from earlier turns describe
+  // positions we've moved past and would mislead RAVE.
   amafScore = new Float64Array(4 * N2);
   amafVisits = new Int32Array(4 * N2);
   amafSeen = new Uint8Array(4 * N2);
   amafSeenList = new Int32Array(4 * N2);
   amafSeenCount = 0;
 
-  deadline = performance.now() + cfg.timeMs;
+  const wallDeadline = Date.now() + (cfg.timeMs || 22000);
   timedOut = false;
   let sims = 0;
   const cap = cfg.simBudget || 100000;
   while (sims < cap) {
-    if (performance.now() >= deadline) { timedOut = true; break; }
-    runOneMctsSim(root);
-    sims++;
+    // Run a batch of sims synchronously (cheap), then yield once so the
+    // event loop runs and Date.now() advances.
+    const batchEnd = Math.min(cap, sims + MCTS_YIELD_BATCH);
+    while (sims < batchEnd) {
+      runOneMctsSim(root);
+      sims++;
+    }
+    // Yield. setTimeout(r, 0) advances real wall time by ~1 ms in V8.
+    await new Promise((r) => setTimeout(r, 0));
+    if (Date.now() >= wallDeadline) { timedOut = true; break; }
   }
 
-  if (!root.children || root.children.length === 0) return null;
+  const wallMs = Date.now() - wallStart;
+  const childCount = root.children ? root.children.length : 0;
+  console.log(
+    `[aiEngine] runMCTSRave done: sims=${sims} cap=${cap} timeMs=${cfg.timeMs} wall=${wallMs}ms` +
+    ` rootChildren=${childCount} timedOut=${timedOut} reused=${reused} side=${side} phase=${phase === 0 ? 'PLACE' : 'ELIM'}`
+  );
+
+  if (!root.children || root.children.length === 0) {
+    if (cfg.reuseTree) discardReuseSnapshot();
+    console.warn(`[aiEngine] runMCTSRave returning NULL — root has no children after ${sims} sims`);
+    return null;
+  }
   // Robust child: most-visited.
   let bestChild = root.children[0];
   for (const c of root.children) {
@@ -945,6 +1104,20 @@ function runMCTSRave(cfg) {
   // Build a `scores` Map for randomization compatibility (visit-counts as score).
   const scores = new Map();
   for (const c of root.children) scores.set(c.move, c.visits);
+
+  // Snapshot for the next call's reuseTree navigation. The next call's diff
+  // vs prevCellsSnap identifies which moves were played in the interim;
+  // _navigateTreeForReuse walks down from prevRoot using that diff.
+  if (cfg.reuseTree) {
+    prevRoot = root;
+    prevCellsSnap = new Int8Array(cells);
+    prevDeadSnap = new Uint8Array(dead);
+    prevPhaseSnap = phase;
+    prevSideSnap = side;
+    prevLastIdxSnap = lastIdx;
+    prevSizeSnap = size;
+  }
+
   return { bestMove: bestChild.move, bestValue: bestChild.visits, scores };
 }
 
@@ -968,25 +1141,49 @@ function countEmpty() {
   return n;
 }
 
-function chooseMove(cfg) {
+async function chooseMove(cfg) {
   // Set the eval pointer for tiers that use one
   currentEval = EVAL_BY_NAME[cfg.evalName] || evalBasic;
+
+  // Per-tier endgame-trigger override (cfg.endgameDepth) falls back to module
+  // constant. Lets a tier widen/tighten the handoff threshold per-tier.
+  const endgameThreshold = Number.isFinite(Number(cfg.endgameDepth))
+    ? Number(cfg.endgameDepth)
+    : ENDGAME_THRESHOLD;
 
   if (cfg.kind === 'oneply') {
     const r = runOnePly();
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'fixedab') {
+    if (cfg.endgame && countEmpty() <= endgameThreshold) {
+      const eg = runEndgame();
+      if (eg) return pickEps(eg.scores, 0, 0);
+    }
     const r = runFixedAB(cfg.depth, cfg.timeMs);
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {
-    if (cfg.endgame && countEmpty() <= ENDGAME_THRESHOLD) {
+    if (cfg.endgame && countEmpty() <= endgameThreshold) {
       const r = runEndgame();
       if (r) return pickEps(r.scores, 0, 0);
-      // fall through to MCTS if endgame timed out
     }
-    const r = runMCTSRave(cfg);
+    // Per-phase budget split: eliminate has at most 8 candidates, MCTS
+    // converges in a fraction of the place-phase budget. Cap eliminate at
+    // 1/4 of the configured sims and 1/3 of the wall budget. This guarantees
+    // the second half of the bot's turn fits in the 30 s deadline without
+    // burning the same budget twice.
+    let effCfg = cfg;
+    if (phase === ELIMINATE) {
+      const baseSims = cfg.simBudget || 100000;
+      const baseTime = cfg.timeMs || 22000;
+      effCfg = {
+        ...cfg,
+        simBudget: Math.min(baseSims, Math.max(500, Math.floor(baseSims / 4))),
+        timeMs: Math.min(baseTime, Math.max(1500, Math.floor(baseTime / 3)))
+      };
+    }
+    const r = await runMCTSRave(effCfg);
     return pickEps(r?.scores, 0, 0);
   }
   return null;
@@ -1030,14 +1227,14 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
-// Synchronous; returns { row, col } or null. The caller is responsible for
-// handling timing (this runs to completion within the tier's time budget,
-// enforced internally via deadline + timedOut).
-export function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer }) {
+// Async because the MCTS path yields between sim batches so wall-clock budget
+// (cfg.timeMs) is enforceable on Cloudflare Workers, where Date.now() is
+// frozen during synchronous JS. Returns Promise<{ row, col } | null>.
+export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer }) {
   const cfg = AI_TIERS[tier];
   if (!cfg) return null;
   initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer);
-  const moveIdx = chooseMove(cfg);
+  const moveIdx = await chooseMove(cfg);
   if (moveIdx === null || moveIdx === undefined || moveIdx < 0) return null;
   const r = (moveIdx / size) | 0;
   const c = moveIdx - r * size;

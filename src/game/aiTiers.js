@@ -4,7 +4,7 @@
 export const AI_TIERS = {
   seeker:    { kind: 'oneply',   evalName: 'simple' },
   hunter:    { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 },
-  collector: { kind: 'mctsrave', simBudget: 100000, timeMs: 12000, policy: 'heavy', endgame: true }
+  collector: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true }
 };
 
 export const TIER_ORDER = ['seeker', 'hunter', 'collector'];

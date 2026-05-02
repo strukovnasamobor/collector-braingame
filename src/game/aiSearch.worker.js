@@ -5,12 +5,12 @@
 
 import { chooseAIMove } from './aiEngineCore';
 
-self.onmessage = (e) => {
+self.onmessage = async (e) => {
   const msg = e.data;
   if (!msg || msg.type !== 'search') return;
   const { requestId, tier, state, size, phase, lastPlaces, currentPlayer } = msg;
   try {
-    const move = chooseAIMove({ tier, state, size, phase, lastPlaces, currentPlayer });
+    const move = await chooseAIMove({ tier, state, size, phase, lastPlaces, currentPlayer });
     self.postMessage({ type: 'result', requestId, move });
   } catch (err) {
     self.postMessage({ type: 'error', requestId, error: String((err && err.message) || err) });
