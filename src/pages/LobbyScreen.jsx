@@ -176,7 +176,7 @@ export default function LobbyScreen() {
 
           {mode === 'ranked' && (
             <div className="sk-lobby-panel">
-              <div style={{ fontWeight: 700, marginBottom: 10, textAlign: 'center' }}>
+              <div style={{ fontWeight: 700, marginBottom: 10, textAlign: 'center', whiteSpace: 'pre-line' }}>
                 {t('lobby.ranked_mode')}
               </div>
               <p style={{ textAlign: 'center', marginTop: 0 }}>

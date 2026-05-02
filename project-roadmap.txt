@@ -1,4 +1,4 @@
-- online AI
+- online AI - Collector is too slow
 
 Ver. 1.0 (1)
 - remove printing logs
@@ -84,3 +84,20 @@ ToDo: 4. Master Collector - AlphaZero
 2	Nice		    7	1	20	20
 3	Great		    8	1	30	30
 4	Excellent	    9	1	40	40
+
+GAMIFICATION
+- brain gold coins
+- rename casual to standard game (hrv. Standardna igra)
+- earning coins 
+    a) earning coins in online standard game with finding a match, not for private rooms
+        - winner gets floor(max_connected_dot/36*100) coins,
+          if is it a draw then they share this coins,
+          is one user leaves then 100 coins will be transfered to user that has stayed,
+          user can't go in minus, if there is less then 100 all will be transfered to other user
+        - in casual/standard queue raitngs doesn't matter, random choose, ratings are not showing in gameplay
+    b) strikes
+    c) achievements
+- shop
+    a) grid size online games
+    b) visuals
+    c) advantages in standard game

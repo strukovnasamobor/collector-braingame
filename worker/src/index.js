@@ -1,4 +1,13 @@
 import { importX509, jwtVerify } from 'jose';
+import { seedBots } from './bootstrap/seedBots';
+import { chooseAIMove as chooseBotMove } from './ai/aiEngine';
+import {
+  ALL_TIERS,
+  BOT_UID_PREFIX,
+  isBotUid,
+  tierFromBotUid,
+  botUidFor
+} from './ai/bots';
 
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -975,9 +984,22 @@ async function handleMatchmakingAction(env, authUser, body) {
     }
 
     const profile = await ensurePlayerDoc(env, authUser, { refreshDisplayName: true });
-    // Only allow enqueue if player is idle or finished
-    if (profile.state !== 'idle' && profile.state !== 'finished') {
-      return errorResponse(`Cannot enqueue while in state: ${profile.state}`, 400);
+    let effectiveState = profile.state;
+    // Heal a stale 'playing' or 'searching' profile state that's been left
+    // orphaned (no active game, no live queue entry). Causes include
+    // setPlayerState calls inside finalizeMatchCleanup failing silently, or a
+    // game ending via a path that didn't run cleanup. We've just confirmed
+    // there's no active game above, so resetting to 'idle' is safe.
+    if (effectiveState === 'playing' || effectiveState === 'searching') {
+      try { await setPlayerState(env, authUser.uid, 'idle'); } catch (_) {}
+      // Best-effort: also remove any orphan queue entries this user might
+      // still have in either mode collection.
+      try { await deleteDocument(env, 'matchmakingQueue_ranked', authUser.uid); } catch (_) {}
+      try { await deleteDocument(env, 'matchmakingQueue_casual', authUser.uid); } catch (_) {}
+      effectiveState = 'idle';
+    }
+    if (effectiveState !== 'idle' && effectiveState !== 'finished') {
+      return errorResponse(`Cannot enqueue while in state: ${effectiveState}`, 400);
     }
 
     const queueGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : requireGridSize(body.gridSize);
@@ -1055,17 +1077,23 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     const liveCandidates = [];
     for (const entry of others) {
-      if (!isFreshQueueEntry(entry)) {
+      const entryUid = entry.data?.uid || entry.id;
+      const entryIsBot = isBotUid(entryUid);
+      if (!entryIsBot && !isFreshQueueEntry(entry)) {
         // Stale entries are deleted (not relabeled) so the queue collection doesn't grow
         // unbounded under abuse. Best-effort: another writer may have already removed it.
+        // Bot entries are intentionally exempt: the cron supervisor refreshes them, and
+        // pruning a bot doc would defeat the "always in queue" semantics.
         try {
           await deleteDocument(env, queueCollection, entry.id);
         } catch (_) {}
         continue;
       }
-      if (entry.data?.status !== 'searching' || entry.data?.matchedWith || entry.data?.gameId) {
-        continue;
-      }
+      // Bots stay 'searching' across many parallel matches and never carry
+      // matchedWith/gameId on their queue entries, so only enforce that strict
+      // freshness check on humans.
+      if (entry.data?.status !== 'searching') continue;
+      if (!entryIsBot && (entry.data?.matchedWith || entry.data?.gameId)) continue;
       if (mode === 'casual') {
         const candGrid = Number(entry.data.gridSize) || 6;
         const candTimer = !!entry.data.timerEnabled;
@@ -1104,9 +1132,19 @@ async function handleMatchmakingAction(env, authUser, body) {
     }
     if (!chosen) return corsResponse({ ok: true, gameId: null });
 
+    // Bot-aware pairing: a candidate's *uid* (the player identity going into the
+    // game doc) is `entry.data.uid`; the *queue doc id* (`entry.id`) may differ
+    // for bots that use a composite id like `bot:hunter_8` so the same bot uid
+    // can hold queue presence at multiple grid sizes simultaneously. Humans have
+    // entry.data.uid === entry.id so this collapses to the original logic.
+    const candidateUid = chosen.candidate.data?.uid || chosen.candidate.id;
+    const candidateIsBot = isBotUid(candidateUid);
+
     // Deterministic pairing: only the lexicographically smaller UID creates the match.
     // The other player observes their queue doc flip to `matched` via Firestore listener.
-    if (authUser.uid >= chosen.candidate.id) {
+    // Bots never call /matchmaking/run — when one is the candidate, the human
+    // always creates the match regardless of uid order.
+    if (!candidateIsBot && authUser.uid >= candidateUid) {
       return corsResponse({ ok: true, gameId: null });
     }
 
@@ -1118,11 +1156,20 @@ async function handleMatchmakingAction(env, authUser, body) {
     const selfProfileDoc = await getDocument(env, 'players', authUser.uid);
     if (!selfProfileDoc || selfProfileDoc.data?.state !== 'searching') return corsResponse({ ok: true, gameId: null });
     const liveCandidate = candidateQueue.data;
-    const candidateProfileDoc = await getDocument(env, 'players', chosen.candidate.id);
-    if (!candidateProfileDoc || candidateProfileDoc.data?.state !== 'searching') {
+    // Bots are looked up by their canonical uid (not the composite queue doc
+    // id); their player profile state is not 'searching' (they're "always
+    // available", possibly mid-N-other-games), so we skip that check for bots.
+    const candidateProfileDoc = await getDocument(env, 'players', candidateUid);
+    if (!candidateProfileDoc) return corsResponse({ ok: true, gameId: null });
+    if (!candidateIsBot && candidateProfileDoc.data?.state !== 'searching') {
       return corsResponse({ ok: true, gameId: null });
     }
-    if (liveCandidate.status !== 'searching' || liveCandidate.mode !== mode || liveCandidate.gameId || liveCandidate.matchedWith) {
+    // Bots stay 'searching' across many parallel matches — only check the
+    // matchedWith/gameId fields for non-bot candidates.
+    if (liveCandidate.status !== 'searching' || liveCandidate.mode !== mode) {
+      return corsResponse({ ok: true, gameId: null });
+    }
+    if (!candidateIsBot && (liveCandidate.gameId || liveCandidate.matchedWith)) {
       return corsResponse({ ok: true, gameId: null });
     }
     if (mode === 'casual') {
@@ -1135,9 +1182,15 @@ async function handleMatchmakingAction(env, authUser, body) {
       }
     }
 
+    // P1/P2 assignment: humans use joinedAt + lex-uid tiebreak. When the
+    // opponent is a bot, deterministically put the human first so the human
+    // gets the natural opening move (and so the human's name appears first in
+    // game-over/leaderboard text).
     const selfJoined = liveSelf.data.joinedAtMs || 0;
     const opponentJoined = liveCandidate.joinedAtMs || 0;
-    const selfIsP1 = selfJoined < opponentJoined || (selfJoined === opponentJoined && authUser.uid < chosen.candidate.id);
+    const selfIsP1 = candidateIsBot
+      ? true
+      : (selfJoined < opponentJoined || (selfJoined === opponentJoined && authUser.uid < candidateUid));
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
 
@@ -1148,9 +1201,9 @@ async function handleMatchmakingAction(env, authUser, body) {
       mode,
       source: 'matchmaking',
       status: 'active',
-      player1uid: selfIsP1 ? authUser.uid : chosen.candidate.id,
+      player1uid: selfIsP1 ? authUser.uid : candidateUid,
       player1name: clampDisplayName(buildPlayerName(p1)),
-      player2uid: selfIsP1 ? chosen.candidate.id : authUser.uid,
+      player2uid: selfIsP1 ? candidateUid : authUser.uid,
       player2name: clampDisplayName(buildPlayerName(p2)),
       gridSize: matchGridSize,
       timerEnabled: mode === 'ranked' ? true : !!self.timerEnabled,
@@ -1165,51 +1218,84 @@ async function handleMatchmakingAction(env, authUser, body) {
       turnDeadlineMs: (mode === 'ranked' || !!self.timerEnabled) ? Date.now() + TURN_DURATION_MS : null
     });
 
-    // Stronger guards: verify neither queue entry already references a game
-    if ((liveSelf.data && liveSelf.data.gameId) || (liveCandidate && liveCandidate.gameId)) {
-      // Another process raced and assigned a game; mark created game cancelled and abort
+    // Stronger guards: verify neither queue entry already references a game.
+    // Bots' queue entries intentionally don't carry gameId across matches, so
+    // we skip the candidate-side check when the opponent is a bot.
+    if ((liveSelf.data && liveSelf.data.gameId) ||
+        (!candidateIsBot && liveCandidate && liveCandidate.gameId)) {
       try {
         await writeDocument(env, 'games', gameId, { ...{ status: 'cancelled', createdAt: new Date().toISOString() } });
-      } catch (e) {
-        // best-effort rollback — ignore failures
-      }
+      } catch (e) {}
       return corsResponse({ ok: true, gameId: null });
     }
 
-    // Try to update both queue rows; if either update fails, roll back the created game to avoid orphaned matches
+    // Update queue rows + spin up MatchBot DO. Failure rolls the game back.
     try {
       await writeDocument(env, queueCollection, authUser.uid, {
         ...liveSelf.data,
         status: 'matched',
         gameId,
-        matchedWith: chosen.candidate.id,
+        matchedWith: candidateUid,
         matchedAt: new Date().toISOString(),
         updatedAtMs: Date.now(),
         updatedAt: new Date().toISOString()
       }, liveSelf.updateTime);
 
-      await writeDocument(env, queueCollection, chosen.candidate.id, {
-        ...liveCandidate,
-        status: 'matched',
-        gameId,
-        matchedWith: authUser.uid,
-        matchedAt: new Date().toISOString(),
-        updatedAtMs: Date.now(),
-        updatedAt: new Date().toISOString()
-      }, candidateQueue.updateTime);
+      if (candidateIsBot) {
+        // Don't transition the bot's queue entry — refresh updatedAtMs only so
+        // the next prune sweep treats it as fresh, and it remains matchable.
+        await writeDocument(env, queueCollection, chosen.candidate.id, {
+          ...liveCandidate,
+          status: 'searching',
+          gameId: null,
+          matchedWith: null,
+          updatedAtMs: Date.now(),
+          updatedAt: new Date().toISOString()
+        }, candidateQueue.updateTime);
+      } else {
+        await writeDocument(env, queueCollection, chosen.candidate.id, {
+          ...liveCandidate,
+          status: 'matched',
+          gameId,
+          matchedWith: authUser.uid,
+          matchedAt: new Date().toISOString(),
+          updatedAtMs: Date.now(),
+          updatedAt: new Date().toISOString()
+        }, candidateQueue.updateTime);
+      }
 
-      // Update both players' state to 'playing' so clients see the active game state
+      // Set state=playing for the human (and the candidate human if any).
       await setPlayerState(env, authUser.uid, 'playing');
-      await setPlayerState(env, chosen.candidate.id, 'playing');
+      if (!candidateIsBot) {
+        await setPlayerState(env, candidateUid, 'playing');
+      }
+
+      // For bot opponents, kick off the per-game MatchBot DO. It owns the
+      // turn loop until the game finishes.
+      if (candidateIsBot) {
+        try {
+          const tier = tierFromBotUid(candidateUid);
+          const botPlayerNumber = selfIsP1 ? 2 : 1;
+          const id = env.MATCH_BOT.idFromName(gameId);
+          const stub = env.MATCH_BOT.get(id);
+          await stub.fetch('https://match-bot.internal/start', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ gameId, botUid: candidateUid, tier, botPlayerNumber })
+          });
+        } catch (botErr) {
+          console.warn('MatchBot kickoff failed', gameId, botErr?.message);
+          // Don't block the human — DO will start late on next alarm if its
+          // storage was already populated; if not, the human will just see
+          // the bot stall, which is recoverable via /game/leave.
+        }
+      }
 
       return corsResponse({ ok: true, gameId });
     } catch (err) {
-      // Rollback: mark game cancelled so frontend won't pick it up as active
       try {
         await writeDocument(env, 'games', gameId, { ...{ status: 'cancelled', cancelledReason: 'queue_update_failed', cancelledAt: new Date().toISOString() } });
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
       return corsResponse({ ok: true, gameId: null });
     }
   }
@@ -1223,6 +1309,13 @@ async function finalizeMatchCleanup(env, game) {
   const queueCollection = matchmakingCollection(mode);
   const uids = [game.player1uid, game.player2uid].filter(Boolean);
   await Promise.all(uids.map(async (uid) => {
+    // Bots maintain persistent queue presence + a single shared profile across
+    // many parallel matches. Cleaning up after one match would (a) yank the
+    // bot's ranked queue entry until the next cron tick re-seeds it, leaving
+    // a ~60 s gap where humans can't match against the bot, and (b) flip the
+    // bot's profile state to 'idle' even though it's still mid-game in many
+    // other simultaneous matches.
+    if (isBotUid(uid)) return;
     try { await deleteDocument(env, queueCollection, uid); } catch (_) {}
     try { await setPlayerState(env, uid, 'idle'); } catch (_) {}
   }));
@@ -1412,6 +1505,101 @@ async function handleGameValidate(env, authUser, body) {
   return corsResponse({ ok: true, valid: Boolean(isParticipant && active) });
 }
 
+// Internal: apply a move to a game on behalf of `callerUid`. Used by both the
+// authenticated HTTP path (handleGameAction → /game/move) and by MatchBot
+// Durable Objects, which must be able to play moves without a Firebase ID
+// token. Throws HttpError on validation failures so the HTTP wrapper can map
+// them back to status codes; the DO catches and logs.
+export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol) {
+  const game = await getDocument(env, 'games', gameId);
+  if (!game) throw new HttpError('Game not found.', 404);
+  const current = game.data;
+  if (current.status !== 'active') throw new HttpError('Game is not active.', 412);
+  if (current.player1uid !== callerUid && current.player2uid !== callerUid) {
+    throw new HttpError('Only participants can play.', 403);
+  }
+
+  const playerNumber = current.player1uid === callerUid ? 1 : 2;
+  if (current.currentPlayer !== playerNumber) throw new HttpError('Not your turn.', 412);
+
+  // Hard deadline enforcement: a move arriving past the turn deadline + grace is rejected
+  // so the wall-clock timer is actually binding (otherwise the deadline is only enforced by
+  // the opponent's claim-timeout call or the cron sweep, leaving a window for stalled moves).
+  if (current.timerEnabled) {
+    const deadline = Number(current.turnDeadlineMs);
+    if (Number.isFinite(deadline) && deadline > 0 && Date.now() > deadline + TURN_DEADLINE_GRACE_MS) {
+      throw new HttpError('Turn has timed out.', 412);
+    }
+  }
+
+  const size = parseGridSize(current.gridSize);
+  const row = requireBoardIndex(rawRow, size, 'row');
+  const col = requireBoardIndex(rawCol, size, 'col');
+  const state = normalizeGameState(current.gameStateJSON, size);
+  const history = current.placementHistory || { p1: [], p2: [] };
+
+  if (current.phase === 'place') {
+    if (!isValidPlacement(state, size, row, col)) {
+      throw new HttpError('Invalid placement.', 400);
+    }
+    const nextState = applyPlace(state, playerNumber, row, col);
+    const nextHistory = {
+      p1: historyToArray(history.p1),
+      p2: historyToArray(history.p2)
+    };
+    nextHistory[`p${playerNumber}`].push({ r: row, c: col });
+    try {
+      await writeDocument(env, 'games', gameId, {
+        ...current,
+        phase: 'eliminate',
+        lastPlaces: { row, col },
+        gameStateJSON: JSON.stringify(nextState),
+        placementHistory: nextHistory,
+        timeouts: { ...(current.timeouts || { p1: 0, p2: 0 }), [`p${playerNumber}`]: 0 }
+      }, game.updateTime);
+    } catch (_) {
+      throw new HttpError('Game state changed. Please retry.', 409);
+    }
+    return { ok: true };
+  }
+
+  if (current.phase === 'eliminate') {
+    if (!isValidElimination(state, current.lastPlaces, row, col)) {
+      throw new HttpError('Invalid elimination.', 400);
+    }
+    const nextState = applyEliminate(state, row, col);
+    const nextHistory = {
+      p1: historyToArray(history.p1),
+      p2: historyToArray(history.p2)
+    };
+    const result = computeGameResult(nextState, size);
+    const update = {
+      ...current,
+      gameStateJSON: JSON.stringify(nextState),
+      placementHistory: nextHistory,
+      lastPlaces: null
+    };
+    if (result) {
+      update.status = 'finished';
+      update.result = result;
+      update.turnDeadlineMs = null;
+    } else {
+      update.currentPlayer = playerNumber === 1 ? 2 : 1;
+      update.phase = 'place';
+      update.turnDeadlineMs = current.timerEnabled ? Date.now() + TURN_DURATION_MS : null;
+    }
+    try {
+      await writeDocument(env, 'games', gameId, update, game.updateTime);
+    } catch (_) {
+      throw new HttpError('Game state changed. Please retry.', 409);
+    }
+    if (result) await finalizeMatchCleanup(env, update);
+    return { ok: true };
+  }
+
+  throw new HttpError('Invalid game phase.', 412);
+}
+
 async function handleGameAction(env, authUser, body) {
   const action = String(body.action || '');
   const gameId = requireGameId(body.gameId);
@@ -1430,93 +1618,13 @@ async function handleGameAction(env, authUser, body) {
   }
 
   if (action === 'move') {
-    const game = await getDocument(env, 'games', gameId);
-    if (!game) return errorResponse('Game not found.', 404);
-    const current = game.data;
-    if (current.status !== 'active') return errorResponse('Game is not active.', 412);
-    if (current.player1uid !== authUser.uid && current.player2uid !== authUser.uid) {
-      return errorResponse('Only participants can play.', 403);
-    }
-
-    const playerNumber = current.player1uid === authUser.uid ? 1 : 2;
-    if (current.currentPlayer !== playerNumber) return errorResponse('Not your turn.', 412);
-
-    // Hard deadline enforcement: a move arriving past the turn deadline + grace is rejected
-    // so the wall-clock timer is actually binding (otherwise the deadline is only enforced by
-    // the opponent's claim-timeout call or the cron sweep, leaving a window for stalled moves).
-    if (current.timerEnabled) {
-      const deadline = Number(current.turnDeadlineMs);
-      if (Number.isFinite(deadline) && deadline > 0 && Date.now() > deadline + TURN_DEADLINE_GRACE_MS) {
-        return errorResponse('Turn has timed out.', 412);
-      }
-    }
-
-    const size = parseGridSize(current.gridSize);
-    const row = requireBoardIndex(body.row, size, 'row');
-    const col = requireBoardIndex(body.col, size, 'col');
-    const state = normalizeGameState(current.gameStateJSON, size);
-    const history = current.placementHistory || { p1: [], p2: [] };
-
-    if (current.phase === 'place') {
-      if (!isValidPlacement(state, size, row, col)) {
-        return errorResponse('Invalid placement.', 400);
-      }
-      const nextState = applyPlace(state, playerNumber, row, col);
-      const nextHistory = {
-        p1: historyToArray(history.p1),
-        p2: historyToArray(history.p2)
-      };
-      nextHistory[`p${playerNumber}`].push({ r: row, c: col });
-      try {
-        await writeDocument(env, 'games', gameId, {
-          ...current,
-          phase: 'eliminate',
-          lastPlaces: { row, col },
-          gameStateJSON: JSON.stringify(nextState),
-          placementHistory: nextHistory,
-          timeouts: { ...(current.timeouts || { p1: 0, p2: 0 }), [`p${playerNumber}`]: 0 }
-        }, game.updateTime);
-      } catch (_) {
-        return errorResponse('Game state changed. Please retry.', 409);
-      }
+    try {
+      await applyMoveInternal(env, authUser.uid, gameId, body.row, body.col);
       return corsResponse({ ok: true });
+    } catch (err) {
+      if (err instanceof HttpError) return errorResponse(err.message, err.status);
+      throw err;
     }
-
-    if (current.phase === 'eliminate') {
-      if (!isValidElimination(state, current.lastPlaces, row, col)) {
-        return errorResponse('Invalid elimination.', 400);
-      }
-      const nextState = applyEliminate(state, row, col);
-      const nextHistory = {
-        p1: historyToArray(history.p1),
-        p2: historyToArray(history.p2)
-      };
-      const result = computeGameResult(nextState, size);
-      const update = {
-        ...current,
-        gameStateJSON: JSON.stringify(nextState),
-        placementHistory: nextHistory,
-        lastPlaces: null
-      };
-      if (result) {
-        update.status = 'finished';
-        update.result = result;
-        update.turnDeadlineMs = null;
-      } else {
-        update.currentPlayer = playerNumber === 1 ? 2 : 1;
-        update.phase = 'place';
-        update.turnDeadlineMs = current.timerEnabled ? Date.now() + TURN_DURATION_MS : null;
-      }
-      try {
-        await writeDocument(env, 'games', gameId, update, game.updateTime);
-      } catch (_) {
-        return errorResponse('Game state changed. Please retry.', 409);
-      }
-      if (result) await finalizeMatchCleanup(env, update);
-      return corsResponse({ ok: true });
-    }
-
-    return errorResponse('Invalid game phase.', 412);
   }
 
   if (action === 'timeout') {
@@ -1856,8 +1964,17 @@ async function sweepStaleGames(env) {
     const createdFloor = Number(data.createdAtMs) || Date.parse(data.createdAt || '') || now;
     const lastP1 = Number(data.lastSeenP1Ms) || createdFloor;
     const lastP2 = Number(data.lastSeenP2Ms) || createdFloor;
-    const p1Stale = lastP1 < cutoff;
-    const p2Stale = lastP2 < cutoff;
+    let p1Stale = lastP1 < cutoff;
+    let p2Stale = lastP2 < cutoff;
+
+    // Bot players are driven by Durable Objects, not by client heartbeats —
+    // their lastSeenP*Ms is never refreshed, so the heartbeat-based stale
+    // check would falsely forfeit them ~60 s into every bot match. Treat
+    // bots as always alive here; if a MatchBot DO is genuinely stuck the
+    // human can still claim a turn-deadline timeout via /game/timeout.
+    if (p1Stale && isBotUid(data.player1uid)) p1Stale = false;
+    if (p2Stale && isBotUid(data.player2uid)) p2Stale = false;
+
     if (!p1Stale && !p2Stale) continue;
 
     try {
@@ -1899,6 +2016,96 @@ function applyCorsOrigin(response, allowOrigin) {
   return new Response(response.body, { status: response.status, headers });
 }
 
+// ── MatchBot Durable Object ────────────────────────────────────────────────
+// One DO instance per active bot game (named by gameId). Alarm-driven loop:
+//  • POST /start lands the cfg, sets a near-immediate alarm.
+//  • alarm() reads games/{gameId}; if it's the bot's turn, run the AI engine
+//    and apply the move via applyMoveInternal. Re-arm at ~800 ms cadence so
+//    place + eliminate land back-to-back without a long human-style pause
+//    between halves of the bot's turn.
+//  • When game.status leaves 'active' (finished / cancelled), wipe storage —
+//    no further alarms, DO becomes inert.
+//
+// Security notes (see plan): no public route to this class; only callable via
+// env.MATCH_BOT bindings from inside this Worker. The /start handler ignores
+// any payload whose gameId doesn't match the DO's name.
+export class MatchBot {
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === '/start' && request.method === 'POST') {
+      let cfg;
+      try { cfg = await request.json(); } catch (_) { return new Response('bad json', { status: 400 }); }
+      if (!cfg || typeof cfg.gameId !== 'string') return new Response('bad cfg', { status: 400 });
+      // The DO is named by gameId via idFromName; our state must match.
+      // (Defense-in-depth — there's no public route here, but if one slipped in
+      // via misconfiguration, this prevents cross-game pokes.)
+      const expectedName = this.state.id.name;
+      if (expectedName && expectedName !== cfg.gameId) {
+        return new Response('cfg/gameId mismatch', { status: 400 });
+      }
+      await this.state.storage.put('cfg', cfg);
+      await this.state.storage.setAlarm(Date.now() + 500);
+      return new Response('ok');
+    }
+    return new Response('not found', { status: 404 });
+  }
+
+  async alarm() {
+    const cfg = await this.state.storage.get('cfg');
+    if (!cfg) return; // already cleaned up
+
+    let game;
+    try {
+      game = await getDocument(this.env, 'games', cfg.gameId);
+    } catch (_) {
+      // Transient firestore error — try again shortly.
+      await this.state.storage.setAlarm(Date.now() + 1500);
+      return;
+    }
+
+    if (!game || game.data?.status !== 'active') {
+      // Game ended (finished, cancelled, or doc gone). Stop scheduling.
+      await this.state.storage.deleteAll();
+      return;
+    }
+
+    if (game.data.currentPlayer !== cfg.botPlayerNumber) {
+      // Human's turn — poll again shortly.
+      await this.state.storage.setAlarm(Date.now() + 1500);
+      return;
+    }
+
+    // Bot's turn. Build engine input from the live Firestore state.
+    const size = parseGridSize(game.data.gridSize);
+    const state = normalizeGameState(game.data.gameStateJSON, size);
+    const move = chooseBotMove({
+      tier: cfg.tier,
+      state,
+      size,
+      phase: game.data.phase,
+      lastPlaces: game.data.lastPlaces,
+      currentPlayer: cfg.botPlayerNumber
+    });
+
+    if (move) {
+      try {
+        await applyMoveInternal(this.env, cfg.botUid, cfg.gameId, move.row, move.col);
+      } catch (err) {
+        console.warn('MatchBot move rejected', cfg.gameId, err?.message);
+        // Don't abort — re-poll. A 412 (state changed) commonly means an
+        // optimistic-concurrency miss; the next read picks up the new state.
+      }
+    }
+
+    await this.state.storage.setAlarm(Date.now() + 800);
+  }
+}
+
 export default {
   async fetch(request, env) {
     const allowOrigin = pickAllowedOrigin(request.headers.get('Origin'));
@@ -1917,5 +2124,6 @@ export default {
   },
   async scheduled(event, env, ctx) {
     ctx.waitUntil(sweepStaleGames(env));
+    ctx.waitUntil(seedBots(env, { getDocument, writeDocument }));
   }
 };

@@ -17,3 +17,18 @@ name = "RATE_LIMITER"
 type = "ratelimit"
 namespace_id = "1001"
 simple = { limit = 120, period = 60 }
+
+# Durable Object class hosting the per-game bot driver. One instance per
+# active bot game, named by gameId. Reachable only via the binding —
+# no public route is registered.
+[[durable_objects.bindings]]
+name = "MATCH_BOT"
+class_name = "MatchBot"
+
+[[migrations]]
+tag = "v1-matchbot"
+# Free Workers plan requires SQLite-backed DO classes (error 10097 if you use
+# `new_classes` here without the paid Workers tier). The state.storage API
+# (put/get/deleteAll/setAlarm) is identical between the two backends, so the
+# MatchBot code doesn't change.
+new_sqlite_classes = ["MatchBot"]

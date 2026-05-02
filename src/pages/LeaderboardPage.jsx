@@ -4,7 +4,7 @@ import {
   IonContent,
   IonSpinner
 } from '@ionic/react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import AppHeader from '../components/AppHeader';
 import { useI18n } from '../contexts/I18nContext';
 import { db } from '../../firebase';
@@ -45,29 +45,28 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Live subscription to the players collection. Whenever any rating field
+  // changes (e.g. after a ranked match finalizes or a bot's rating drifts),
+  // the table updates in place without requiring a page reload.
   useEffect(() => {
-    if (onlinePlayers !== null) return;
-    let cancelled = false;
     setLoading(true);
     setError('');
-    getDocs(query(collection(db, 'players'), orderBy('rating', 'desc')))
-      .then((snap) => {
-        if (cancelled) return;
+    const q = query(collection(db, 'players'), orderBy('rating', 'desc'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
         const arr = [];
         snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
         setOnlinePlayers(arr);
-      })
-      .catch((e) => {
-        if (cancelled) return;
+        setLoading(false);
+      },
+      (e) => {
         setError(e.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [onlinePlayers]);
+        setLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   return (
     <IonPage>
@@ -89,7 +88,15 @@ export default function LeaderboardPage() {
                 t={t}
                 empty={t('leaderboard.empty_online')}
                 keyFn={(p) => p.id || p.displayName}
-                renderName={(p) => p.displayName || 'Player'}
+                renderName={(p) => {
+                  const name = p.displayName || 'Player';
+                  // Bot accounts (uid prefix `bot:`) are AI opponents. The
+                  // server already includes the 🤖 in displayName, but we
+                  // belt-and-suspenders append it for any bot whose name
+                  // somehow lost the marker.
+                  const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
+                  return isBot && !name.includes('🤖') ? `${name} 🤖` : name;
+                }}
                 renderRating={(p) => p.rating}
               />
             )}
