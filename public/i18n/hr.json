@@ -21,6 +21,7 @@
     "language_hr": "Hrvatski",
     "change_language": "Postavi jezik",
     "change_name": "Promijeni ime",
+    "source_code": "Vidi izvorni kod",
     "delete_account": "Obriši račun"
   },
   "auth": {

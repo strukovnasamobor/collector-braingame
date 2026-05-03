@@ -1,0 +1,9 @@
+{
+  "kind": "mctsrave",
+  "simBudget": 100000,
+  "timeMs": 22000,
+  "policy": "heavy",
+  "endgame": true,
+  "endgameDepth": 12,
+  "reuseTree": false
+}

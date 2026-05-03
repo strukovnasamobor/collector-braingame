@@ -21,6 +21,7 @@
     "language_hr": "Hrvatski",
     "change_language": "Set language",
     "change_name": "Change name",
+    "source_code": "See source code",
     "delete_account": "Delete account"
   },
   "auth": {

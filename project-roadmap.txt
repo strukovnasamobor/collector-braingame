@@ -7,7 +7,7 @@ Ver. 1.0.0 (1)
 - Github add tag and upload apk and zipped dist folder
 - Google Play Store new edition
 - firestore reset (all docs deleted, recreates bots 1000/1400/1800)
-- check readme file link to google play store
+- check readme file link to google play store, add support button
 
 OFFLINE AI TIERS
 1. Seeker - Tragač: { kind: 'oneply',   evalName: 'simple' }
@@ -89,16 +89,15 @@ Only in ranked games:
 
 GAMIFICATION
 - brain gold coins
-- earning coins 
-    a) earning coins in online standard game with finding a match, not for private rooms
-        - winner gets floor(max_connected_dot/36*100) coins,
-          if is it a draw then they share this coins,
-          is one user leaves then 100 coins will be transfered to user that has stayed,
-          user can't go in minus, if there is less then 100 all will be transfered to other user
-        - in casual/standard queue raitngs doesn't matter, random choose, ratings are not showing in gameplay
-    b) strikes
-    c) achievements
-- shop
-    a) grid size online games
-    b) visuals
-    c) advantages in standard game
+- earning coins in online standard game with finding a match, not for private rooms
+    - winner gets ceil(max_connected_dot/36*100) coins,
+        if is it a draw then they share this coins,
+        is one user leaves then 100/70/45/25 per 12x12/10x10/8x8/6x6 coins will be transfered to user that has stayed,
+        user can't go in negative, if there is less then this amount all will be transfered to other user
+    - in casual/standard queue raitngs doesn't matter, random choose, ratings are not showing in gameplay
+- spending coins
+    - for each ranked game -100 points, if lower then user can enter
+    - grid size online games
+       - 100 coins for 8x8 online grid
+       - 1 000 coins for 10x10 online grid
+       - 10 000 coins for 12x12 online grid

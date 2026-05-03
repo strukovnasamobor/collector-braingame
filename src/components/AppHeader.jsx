@@ -21,8 +21,11 @@ import {
   menuOutline,
   pencilOutline,
   trashOutline,
-  logOutOutline
+  logOutOutline,
+  logoGithub
 } from 'ionicons/icons';
+
+const SOURCE_CODE_URL = 'https://github.com/strukovnasamobor/collector-braingame';
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -81,6 +84,11 @@ export default function AppHeader({ title }) {
   const handleDeleteClick = () => {
     closeMenu();
     setDeleteOpen(true);
+  };
+
+  const handleSourceCodeClick = () => {
+    closeMenu();
+    window.open(SOURCE_CODE_URL, '_blank', 'noopener,noreferrer');
   };
 
   const handleSignOutClick = async () => {
@@ -153,6 +161,10 @@ export default function AppHeader({ title }) {
           <IonItem button detail={false} onClick={handleLanguageClick}>
             <IonIcon slot="start" icon={languageOutline} />
             <IonLabel>{t('menu.change_language')}</IonLabel>
+          </IonItem>
+          <IonItem button detail={false} onClick={handleSourceCodeClick}>
+            <IonIcon slot="start" icon={logoGithub} />
+            <IonLabel>{t('menu.source_code')}</IonLabel>
           </IonItem>
           {user && (
             <>
