@@ -865,6 +865,15 @@ function ensureUntried(node) {
   node.children = [];
 }
 
+// Per-call overrides for the deeper MCTS constants. runMCTSRave sets these
+// from cfg.{raveK,mctsC,pwAlpha,rolloutShortcut} at the top of each call,
+// falling back to the module imports / defaults. Setting raveK=0 disables
+// RAVE — beta becomes 0 so the UCT-RAVE blend collapses to pure UCT.
+let raveKEff = RAVE_K;
+let mctsCEff = MCTS_C;
+let pwAlphaEff = PW_ALPHA;
+let rolloutShortcutEff = false;
+
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
 let amafScore = null;
 let amafVisits = null;
@@ -900,9 +909,9 @@ function uctRaveScore(child, parent) {
   const ai = amafIdx(parent.toMove, parent.phase, child.move);
   const av = amafVisits[ai];
   const amafMean = av > 0 ? amafScore[ai] / av : 0;
-  const beta = Math.sqrt(RAVE_K / (3 * cv + RAVE_K));
+  const beta = raveKEff > 0 ? Math.sqrt(raveKEff / (3 * cv + raveKEff)) : 0;
   const exploit = (1 - beta) * uctMean + beta * amafMean;
-  const explore = MCTS_C * Math.sqrt(Math.log(parent.visits) / cv);
+  const explore = mctsCEff * Math.sqrt(Math.log(parent.visits) / cv);
   return exploit + explore;
 }
 
@@ -938,7 +947,7 @@ function runOneMctsSim(root) {
     // Terminal check: no untried AND no children means no legal moves here.
     if (node.untriedCount === 0 && node.children.length === 0) break;
 
-    const cap = Math.max(1, Math.ceil(Math.pow(Math.max(1, node.visits), PW_ALPHA)));
+    const cap = Math.max(1, Math.ceil(Math.pow(Math.max(1, node.visits), pwAlphaEff)));
     if (node.children.length < cap && node.untriedCount > 0) {
       // EXPAND
       const r = expandOne(node);
@@ -966,9 +975,21 @@ function runOneMctsSim(root) {
     path.push(node);
   }
 
-  // ROLLOUT — until terminal or safety cap
+  // ROLLOUT — heavy random play until terminal, safety cap, or score-bound
+  // shortcut. Shortcut: every SHORTCUT_INTERVAL plies (when free cells ≤
+  // SHORTCUT_MAX_FREE), check whether one side's mathematical upper bound on
+  // its final group size is below the other side's already-realized biggest
+  // group. If so, the rollout outcome is locked regardless of remaining play —
+  // skip to backprop with the decided result. Bound: each remaining "round"
+  // costs 2 cells (place + eliminate), so each player can place at most
+  // ⌈free/4⌉ more dots; UB(P) = biggestGroup(P) + ⌈free/4⌉. Eliminations
+  // cannot reduce a player's biggest group, so biggestGroup is monotone and
+  // UB < opponent.biggestGroup is a true seal.
   const ROLL_CAP = 2 * N2;
+  const SHORTCUT_INTERVAL = 4;
+  const SHORTCUT_MAX_FREE = 30;
   let plyCount = 0;
+  let earlyResult = null;     // {-1, 0, +1} from leaf-side perspective, or null
   while (plyCount < ROLL_CAP) {
     const buf = moveBufs[0]; // safe — selection/expansion no longer descending recursively
     let n;
@@ -985,12 +1006,35 @@ function runOneMctsSim(root) {
     // wasPhase=ELIMINATE means the mover was the OPPOSITE side after our toggle.
     // The amafTouch call handles that by computing the mover.
     plyCount++;
+
+    if (rolloutShortcutEff && plyCount % SHORTCUT_INTERVAL === 0) {
+      const free = countEmpty();
+      if (free > 0 && free <= SHORTCUT_MAX_FREE) {
+        const big1 = biggestGroup(1);
+        const big2 = biggestGroup(2);
+        const maxNew = Math.ceil(free / 4);
+        if (big1 + maxNew < big2) {
+          // Player 1 cannot catch Player 2 even with maxed-out remaining play.
+          earlyResult = (side === 2) ? 1 : -1;
+          break;
+        } else if (big2 + maxNew < big1) {
+          earlyResult = (side === 1) ? 1 : -1;
+          break;
+        }
+      }
+    }
   }
 
-  // Compute final result from leaf side-to-move's perspective: ∈ {-1, 0, +1}.
-  const myFinal = biggestGroup(side);
-  const opFinal = biggestGroup(side === 1 ? 2 : 1);
-  const leafResult = myFinal > opFinal ? 1 : myFinal < opFinal ? -1 : 0;
+  // Final result: leaf-side perspective ∈ {-1, 0, +1}. If the shortcut sealed
+  // the rollout, use that; else compute from terminal state.
+  let leafResult;
+  if (earlyResult !== null) {
+    leafResult = earlyResult;
+  } else {
+    const myFinal = biggestGroup(side);
+    const opFinal = biggestGroup(side === 1 ? 2 : 1);
+    leafResult = myFinal > opFinal ? 1 : myFinal < opFinal ? -1 : 0;
+  }
 
   // BACKPROP — walk path leaf→root, flipping when child.toMove !== node.toMove.
   let s = leafResult;
@@ -1042,6 +1086,12 @@ const MCTS_YIELD_BATCH = 1000;
 
 async function runMCTSRave(cfg) {
   const wallStart = Date.now();
+
+  // Per-call constant overrides. Pass cfg.raveK = 0 to disable RAVE (pure UCT).
+  raveKEff = Number.isFinite(Number(cfg.raveK)) ? Number(cfg.raveK) : RAVE_K;
+  mctsCEff = Number.isFinite(Number(cfg.mctsC)) ? Number(cfg.mctsC) : MCTS_C;
+  pwAlphaEff = Number.isFinite(Number(cfg.pwAlpha)) ? Number(cfg.pwAlpha) : PW_ALPHA;
+  rolloutShortcutEff = !!cfg.rolloutShortcut;
 
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
   // is set and we have a saved snapshot from the previous call.

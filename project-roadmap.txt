@@ -10,14 +10,14 @@ Ver. 1.0.0 (1)
 - check readme file link to google play store, add support button
 
 OFFLINE AI TIERS
-1. Seeker - Tragač: { kind: 'oneply',   evalName: 'simple' }
-2. Hunter - Lovac: { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 }
-3. Collector - Sakupljač: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true }
+1. Seeker - Tragač: { kind: 'oneply', evalName: 'simple' }
+2. Hunter - Lovac: { kind: 'fixedab', depth: 3, evalName: 'basic', timeMs: 2000 }
+3. Collector - Sakupljač: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 
 ONLINE AI TIERS
-1. Seeker - Tragač: { kind: 'oneply',   evalName: 'simple' }
-2. Hunter - Lovac: { kind: 'fixedab',  depth: 3, evalName: 'basic', timeMs: 2000 }
-3. Collector - Sakupljač: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true }
+1. Seeker - Tragač: { kind: 'oneply', evalName: 'simple' }
+2. Hunter - Lovac: { kind: 'fixedab', depth: 3, evalName: 'basic', timeMs: 2000 }
+3. Collector - Sakupljač: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 Only in ranked games:
 - Collector Master { kind: 'alphazero' }
 
@@ -88,16 +88,16 @@ Only in ranked games:
 4	Excellent	    9	1	40	40
 
 GAMIFICATION
-- brain gold coins
-- earning coins in online standard game with finding a match, not for private rooms
-    - winner gets ceil(max_connected_dot/36*100) coins,
-        if is it a draw then they share this coins,
-        is one user leaves then 100/70/45/25 per 12x12/10x10/8x8/6x6 coins will be transfered to user that has stayed,
-        user can't go in negative, if there is less then this amount all will be transfered to other user
-    - in casual/standard queue raitngs doesn't matter, random choose, ratings are not showing in gameplay
+- brain gold coins (collector-braingame\public\images\brain_coins.png)
+    - add them on online tab below options when user is signed in
+- earning coins is possible only in online standard game with finding a match, not for private rooms
+    - winner gets 10 coins per connected dot in the max chain,
+      if is it a draw then they share the prize,
+      if one wins because other user leaves or after 3 missing turns then user get coins by the current connected dots
 - spending coins
-    - for each ranked game -100 points, if lower then user can enter
+    - for each ranked game -100 points is taken from user
     - grid size online games
        - 100 coins for 8x8 online grid
        - 1 000 coins for 10x10 online grid
        - 10 000 coins for 12x12 online grid
+- protect coins and accesing grid sizes with backend
