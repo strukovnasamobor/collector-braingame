@@ -1142,10 +1142,16 @@ async function handleMatchmakingAction(env, authUser, body) {
     if (!N) return corsResponse({ ok: true, gameId: null });
 
     // Sample-then-closest pairing: pick a uniform random pool of size
-    // K = min(ceil(N/10), 1000), then choose the closest by display rating.
-    // This always pairs whenever ≥1 candidate exists, with no time-based
-    // band widening; rating precision scales smoothly with queue depth.
-    const poolSize = Math.min(Math.ceil(N / MATCHMAKING_POOL_DIVISOR), MATCHMAKING_POOL_MAX);
+    // K = min(ceil(N/10) + 1, 1000, N), then choose the closest by display
+    // rating. This always pairs whenever ≥1 candidate exists, with no
+    // time-based band widening; rating precision scales smoothly with queue
+    // depth. The +1 lifts the floor so queues of 2-10 actually compare
+    // candidates instead of collapsing to near-random pairing.
+    const poolSize = Math.min(
+      Math.ceil(N / MATCHMAKING_POOL_DIVISOR) + 1,
+      MATCHMAKING_POOL_MAX,
+      N
+    );
     const pool = liveCandidates.slice();
     for (let i = 0; i < poolSize; i++) {
       const j = i + Math.floor(Math.random() * (pool.length - i));
@@ -1155,14 +1161,11 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     let chosen = null;
     let bestDiff = Infinity;
-    let bestJoined = Infinity;
     for (const entry of pool) {
       const rating = Number(entry.data.rating || DEFAULT_DISPLAY_RATING);
       const diff = Math.abs(rating - selfDisplayRating);
-      const joined = Number(entry.data.joinedAtMs) || 0;
-      if (diff < bestDiff || (diff === bestDiff && joined < bestJoined)) {
+      if (diff < bestDiff) {
         bestDiff = diff;
-        bestJoined = joined;
         chosen = { candidate: entry, displayRating: rating };
       }
     }

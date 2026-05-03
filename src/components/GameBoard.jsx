@@ -142,12 +142,14 @@ export default function GameBoard({
   const lines2 = computeConnections(h2);
 
   // Detect a new placement and trigger a "wave" pulse across the connected group.
-  // In online mode the parent passes `animationHistory` (server-confirmed) so
-  // the wave fires only after the server validates the move — never on the
-  // optimistic update. Offline omits the prop and falls back to the live
-  // history. BFS always reads from the live `state`; by the time server
-  // history grows, the optimistic move is either the same dot (already there)
-  // or has been reconciled in.
+  // Drives off the live `history`, which in online mode includes optimistic
+  // pending places (see useOnlineGame's `history` memo) — so the pulse fires
+  // the moment the player taps, not when the Firestore snapshot catches up.
+  // If a pending place is rejected, `state[pr][pc].player` is null again by
+  // the time this effect re-runs, so the `state[pr]?.[pc]?.player === placedBy`
+  // guard below suppresses the pulse for the rolled-back cell. The
+  // `animationHistory` prop is kept as an escape hatch for any future caller
+  // that needs server-only animation timing.
   const detectionHistory = animationHistory || history;
   const detectH1 = normalizeHistory(detectionHistory?.[1] || []);
   const detectH2 = normalizeHistory(detectionHistory?.[2] || []);

@@ -30,7 +30,6 @@ export default function OnlineGamePage() {
     exists,
     state,
     history: placementHistory,
-    serverHistory,
     scores,
     serverScores,
     myPlayerNumber,
@@ -245,7 +244,6 @@ export default function OnlineGamePage() {
             state={state}
             size={data.gridSize}
             history={placementHistory}
-            animationHistory={serverHistory}
             onCellClick={placeDot}
             onDisabledClick={handleDisabledClick}
             disabled={!isMyTurn || data.status !== 'active'}
