@@ -1,5 +1,5 @@
-- evaluate Seeker and Hunter
-- gamification - poravnati cijene za board, testirati
+- evaluate Seeker and Hunter bots
+- gamification - poravnati cijene za board, testirati, jesu li pravila korisniku jasna
 - vulnerabilities and exploits checks
 - add Collector Master - AlphaZero
 
