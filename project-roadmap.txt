@@ -91,9 +91,10 @@ GAMIFICATION
 - brain gold coins (collector-braingame\public\images\brain_coins.png)
     - add them on online tab below options when user is signed in
 - earning coins is possible only in online standard game with finding a match, not for private rooms
-    - winner gets 10 coins per connected dot in the max chain,
-      if is it a draw then they share the prize,
-      if one wins because other user leaves or after 3 missing turns then user get coins by the current connected dots,
+    - winner gets 10 x number of points in the max chain,
+      loser get 1 × number of points in the max chain,
+      if is it a draw then both gets 5 × number of coins the max chain,
+      if one wins because other user leaves or after 3 missing turns then user get 10 x number of points in the current max chain,
       if user leaves -100 coins (can't go in beyond 0)
 - spending coins
     - for each ranked game -100 points is taken from user
