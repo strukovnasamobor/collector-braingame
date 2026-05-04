@@ -1,12 +1,15 @@
+- evaluate Seeker and Hunter
+- gamification - poravnati cijene za board, testirati
 - vulnerabilities and exploits checks
 - add Collector Master - AlphaZero
 
 Ver. 1.0.0 (1)
 - remove printing logs
+- to production flags: firebase.js, vite.config.js
 - deploy and make TWA with PWA Web Builder
 - Github add tag and upload apk and zipped dist folder
 - Google Play Store new edition
-- firestore reset (all docs deleted, recreates bots 1000/1400/1800)
+- firestore reset (all docs deleted, recreates bots with 1000/1000/1000)
 - check readme file link to google play store, add support button
 
 OFFLINE AI TIERS

@@ -103,7 +103,21 @@
     "must_eliminate_adjacent": "You must eliminate an adjacent cell!",
     "enter_both_names": "Please enter both player names!",
     "timeout_loss": "{player} lost due to inactivity (3 missed turns)!",
-    "rating_change": "Rating: {p1} {d1} ({r1}), {p2} {d2} ({r2})."
+    "rating_change": "Rating: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
+    "leaver_warning_title": "Leave the game?",
+    "leaver_warning_message": "If you leave now, you will lose up to 100 coins and your opponent will receive coins for their current group."
+  },
+  "coins": {
+    "balance_title": "Your Brain Gold Coin balance",
+    "ranked_fee_label": "Entry fee:",
+    "unlock_more_title": "Unlock more boards",
+    "unlock_button": "Unlock",
+    "unlock_confirm_title": "Unlock {size} board?",
+    "unlock_confirm_message": "Unlock the {size} board for {cost} BGC? You currently have {balance}.",
+    "unlock_failed": "Unlock failed. Please try again.",
+    "insufficient": "Not enough BGC.",
+    "insufficient_for_ranked": "You need 100 BGC to play Ranked. Earn BGC by playing Standard matches.",
+    "grid_locked": "This board size is locked. Unlock it in the lobby first."
   },
   "leaderboard": {
     "title": "Leaderboard",

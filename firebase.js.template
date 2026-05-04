@@ -21,6 +21,7 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 
 // Initialize App Check with reCAPTCHA v3
+self.FIREBASE_APPCHECK_DEBUG_TOKEN = false; // Set to false in production
 initializeAppCheck(app, {
   provider: new ReCaptchaV3Provider('YOUR_RECAPTCHA_SITE_KEY'),
   isTokenAutoRefreshEnabled: true

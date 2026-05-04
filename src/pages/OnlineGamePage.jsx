@@ -8,6 +8,7 @@ import {
   IonSpinner
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
+import CoinBalance from '../components/CoinBalance';
 import GameBoard from '../components/GameBoard';
 import MilestoneCelebration from '../components/MilestoneCelebration';
 import TimesUpFlash from '../components/TimesUpFlash';
@@ -132,13 +133,17 @@ export default function OnlineGamePage() {
   }, [leaveGame, history]);
 
   useEffect(() => {
+    const isMatchmade = data?.source === 'matchmaking';
+    const showLeaverWarning = !finalResult && data?.status === 'active' && isMatchmade;
     registerExit({
       tabRoot: '/online',
       silent: !!finalResult,
+      title: showLeaverWarning ? t('game.leaver_warning_title') : undefined,
+      message: showLeaverWarning ? t('game.leaver_warning_message') : undefined,
       onConfirm: handleQuit
     });
     return () => clearExit('/online');
-  }, [registerExit, clearExit, handleQuit, finalResult]);
+  }, [registerExit, clearExit, handleQuit, finalResult, data, t]);
 
   const renderWinnerLine = (winnerName, winnerNumber) => {
     const winnerColor = winnerNumber === 1 ? '#dc3545' : '#007bff';
@@ -151,7 +156,7 @@ export default function OnlineGamePage() {
 
   const buildGameOverMessage = () => {
     if (!finalResult || !data) return null;
-    const { winner, timeout, loser, delta1, delta2, newR1, newR2 } = finalResult;
+    const { winner, timeout, loser, delta1, delta2, newR1, newR2, coinDelta1, coinDelta2 } = finalResult;
     const p1 = data.player1name;
     const p2 = data.player2name;
     const ratingLine =
@@ -167,6 +172,21 @@ export default function OnlineGamePage() {
           </span>
         </>
       ) : null;
+    const coinLine =
+      coinDelta1 != null && coinDelta2 != null ? (
+        <>
+          {'\n'}
+          <span className="sk-game-over-coins">
+            {p1} {formatDelta(coinDelta1)}{' '}
+            <CoinBalance amount={Math.abs(coinDelta1)} size="sm" />
+          </span>
+          {'\n'}
+          <span className="sk-game-over-coins">
+            {p2} {formatDelta(coinDelta2)}{' '}
+            <CoinBalance amount={Math.abs(coinDelta2)} size="sm" />
+          </span>
+        </>
+      ) : null;
     if (timeout) {
       const loserName = loser === 1 ? p1 : p2;
       const winnerName = winner === 1 ? p1 : p2;
@@ -176,6 +196,7 @@ export default function OnlineGamePage() {
           {'\n'}
           {renderWinnerLine(winnerName, winner)}
           {ratingLine}
+          {coinLine}
         </>
       );
     }
@@ -184,6 +205,7 @@ export default function OnlineGamePage() {
         <>
           {t('game.game_over_draw')}
           {ratingLine}
+          {coinLine}
         </>
       );
     }
@@ -192,6 +214,7 @@ export default function OnlineGamePage() {
       <>
         {renderWinnerLine(winnerName, winner)}
         {ratingLine}
+        {coinLine}
       </>
     );
   };

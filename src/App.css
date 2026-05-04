@@ -131,6 +131,79 @@
   text-align: center;
 }
 
+/* Coin balance widget */
+.sk-coin-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--sk-text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sk-coin-balance .sk-coin-icon {
+  width: 1.1em;
+  height: 1.1em;
+  display: block;
+}
+
+.sk-coin-balance--md {
+  font-size: 1.05rem;
+}
+
+.sk-coin-balance--lg {
+  font-size: 1.4rem;
+}
+
+.sk-coin-balance--sm {
+  font-size: 0.85rem;
+}
+
+.sk-coin-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--sk-dialog-bg);
+  border: 1px solid var(--sk-cell-border);
+}
+
+.sk-grid-unlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--sk-cell-border);
+}
+
+.sk-grid-unlocks-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.sk-grid-unlock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sk-grid-unlock-row .sk-grid-unlock-label {
+  font-weight: 600;
+}
+
+.sk-grid-unlock-row .sk-coin-balance {
+  font-size: 0.95rem;
+}
+
 /* Game board */
 .sk-game-header {
   display: flex;
@@ -207,6 +280,15 @@
   font-size: 0.78em;
   font-weight: 400;
   opacity: 0.85;
+  letter-spacing: 0.01em;
+}
+
+.sk-game-over-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  font-weight: 600;
   letter-spacing: 0.01em;
 }
 

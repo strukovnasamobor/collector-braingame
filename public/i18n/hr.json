@@ -103,7 +103,21 @@
     "must_eliminate_adjacent": "Morate osjenčati susjednu ćeliju!",
     "enter_both_names": "Molimo unesite oba imena igrača!",
     "timeout_loss": "{player} je izgubio zbog neaktivnosti (3 propuštena poteza)!",
-    "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2})."
+    "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
+    "leaver_warning_title": "Napustiti igru?",
+    "leaver_warning_message": "Ako sada izađete, izgubit ćete do 100 zlatnika, a protivnik će dobiti zlatnike za trenutnu najveću grupu."
+  },
+  "coins": {
+    "balance_title": "Vaše stanje Brain Gold Coins-a",
+    "ranked_fee_label": "Ulaz:",
+    "unlock_more_title": "Otključajte više ploča",
+    "unlock_button": "Otključaj",
+    "unlock_confirm_title": "Otključati ploču {size}?",
+    "unlock_confirm_message": "Otključati ploču {size} za {cost} BGC? Trenutno imate {balance}.",
+    "unlock_failed": "Otključavanje nije uspjelo. Pokušajte ponovno.",
+    "insufficient": "Nemate dovoljno BGC.",
+    "insufficient_for_ranked": "Potrebno vam je 100 BGC za rangiranu igru. Osvojite zlato igranjem Standardnih mečeva.",
+    "grid_locked": "Ova veličina ploče je zaključana. Otključajte je u izborniku."
   },
   "leaderboard": {
     "title": "Ljestvica",

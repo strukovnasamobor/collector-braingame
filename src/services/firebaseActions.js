@@ -103,3 +103,7 @@ export async function validateGame({ gameId }) {
 export async function finalizeRankedResult({ gameId }) {
   return callBackend('/ranked/finalize', { gameId });
 }
+
+export async function purchaseGridUnlock({ size }) {
+  return callBackend('/economy/unlock-grid', { size });
+}

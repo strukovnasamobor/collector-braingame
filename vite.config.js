@@ -38,6 +38,15 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: false, // Set to true in production
+        drop_debugger: false, // Set to true in production
+      },
+    },
+  },
   server: {
     port: 5173,
     open: false

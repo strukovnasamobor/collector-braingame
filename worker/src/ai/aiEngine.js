@@ -671,7 +671,11 @@ function runEndgame() {
 }
 
 // ── MCTS + RAVE + progressive widening (Advanced) ──────────────────────────
-// Heavy rollout/ordering policy weights.
+// Rollout / move-ordering policy weights. Three variants are dispatched via
+// cfg.policy ('heavy' | 'collectHeavy' | 'attackHeavy'); a fourth path
+// 'light' bypasses weighting entirely (handled in pickWeighted/ensureUntried).
+
+// Heavy: balanced offense + defense (default; tuned by hand).
 function heavyWeight(idx, ph, who) {
   const opp = who === 1 ? 2 : 1;
   if (ph === PLACE) {
@@ -680,20 +684,51 @@ function heavyWeight(idx, ph, who) {
     const deadAdj = countAdjacentDead(idx);
     return Math.max(0.1, 1 + 3 * ownAdj + 2 * oppAdj - 2 * deadAdj);
   }
-  // ELIMINATE
   const ownAdj = countAdjacentDots(idx, who);
   const oppAdj = countAdjacentDots(idx, opp);
   return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
 }
 
-// Weighted random pick from `arr` of length `n`, weights computed via heavyWeight.
+// Collect-focused: prefer growing own group, ignore opponent on placement.
+// Eliminations stay anti-opponent but heavily avoid own-adjacent cells.
+function collectHeavyWeight(idx, ph, who) {
+  const opp = who === 1 ? 2 : 1;
+  if (ph === PLACE) {
+    const ownAdj = countAdjacentDots(idx, who);
+    const deadAdj = countAdjacentDead(idx);
+    return Math.max(0.1, 1 + 5 * ownAdj - 3 * deadAdj);
+  }
+  const ownAdj = countAdjacentDots(idx, who);
+  const oppAdj = countAdjacentDots(idx, opp);
+  return Math.max(0.1, 1 + 3 * oppAdj - 4 * ownAdj);
+}
+
+// Attack-focused: contest opponent territory; eliminations maximize damage.
+function attackHeavyWeight(idx, ph, who) {
+  const opp = who === 1 ? 2 : 1;
+  if (ph === PLACE) {
+    const ownAdj = countAdjacentDots(idx, who);
+    const oppAdj = countAdjacentDots(idx, opp);
+    const deadAdj = countAdjacentDead(idx);
+    return Math.max(0.1, 1 + 1 * ownAdj + 5 * oppAdj - 1 * deadAdj);
+  }
+  const ownAdj = countAdjacentDots(idx, who);
+  const oppAdj = countAdjacentDots(idx, opp);
+  return Math.max(0.1, 1 + 7 * oppAdj - 1 * ownAdj);
+}
+
+// Weighted random pick from `arr` of length `n`, weights via the dispatched
+// policy function (heavyWeight | collectHeavyWeight | attackHeavyWeight).
+// Under light policy (cfg.policy === 'light'), falls back to uniform random.
 function pickWeighted(arr, n, ph, who) {
+  if (lightPolicyEff) return arr[Math.floor(Math.random() * n)];
+  const w = weightFnEff;
   let total = 0;
-  for (let i = 0; i < n; i++) total += heavyWeight(arr[i], ph, who);
+  for (let i = 0; i < n; i++) total += w(arr[i], ph, who);
   let r = Math.random() * total;
   for (let i = 0; i < n; i++) {
-    const w = heavyWeight(arr[i], ph, who);
-    r -= w;
+    const wi = w(arr[i], ph, who);
+    r -= wi;
     if (r <= 0) return arr[i];
   }
   return arr[n - 1];
@@ -844,9 +879,18 @@ function ensureUntried(node) {
     node.children = [];
     return;
   }
-  // sort buf[0..n] by heavy policy DESC (uses shared scoreBuf as scratch)
+  if (lightPolicyEff) {
+    // Light policy: skip the heavy-weighted sort. untriedSorted preserves
+    // genPlacements/genEliminations index order, giving an unbiased expansion
+    // sequence (still gated by progressive widening on visit count).
+    node.untriedSorted = buf.slice(0, n);
+    node.untriedCount = n;
+    node.children = [];
+    return;
+  }
+  // sort buf[0..n] by dispatched policy DESC (uses shared scoreBuf as scratch)
   for (let i = 0; i < n; i++) {
-    scoreBuf[i] = Math.round(heavyWeight(buf[i], node.phase, node.toMove) * 1000) | 0;
+    scoreBuf[i] = Math.round(weightFnEff(buf[i], node.phase, node.toMove) * 1000) | 0;
   }
   for (let i = 1; i < n; i++) {
     const m = buf[i], s = scoreBuf[i];
@@ -873,6 +917,13 @@ let raveKEff = RAVE_K;
 let mctsCEff = MCTS_C;
 let pwAlphaEff = PW_ALPHA;
 let rolloutShortcutEff = false;
+// When true, rollouts pick uniformly random and MCTS expansion uses the move
+// generator's natural index order — i.e. no policy bias at all. Set per-call
+// from cfg.policy === 'light'.
+let lightPolicyEff = false;
+// Active weight function for non-light policies. Dispatched per-call from
+// cfg.policy ∈ {'heavy' (default), 'collectHeavy', 'attackHeavy'}.
+let weightFnEff = heavyWeight;
 
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
 let amafScore = null;
@@ -1091,6 +1142,10 @@ async function runMCTSRave(cfg) {
   mctsCEff = Number.isFinite(Number(cfg.mctsC)) ? Number(cfg.mctsC) : MCTS_C;
   pwAlphaEff = Number.isFinite(Number(cfg.pwAlpha)) ? Number(cfg.pwAlpha) : PW_ALPHA;
   rolloutShortcutEff = !!cfg.rolloutShortcut;
+  lightPolicyEff = cfg.policy === 'light';
+  if (cfg.policy === 'collectHeavy') weightFnEff = collectHeavyWeight;
+  else if (cfg.policy === 'attackHeavy') weightFnEff = attackHeavyWeight;
+  else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
 
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
   // is set and we have a saved snapshot from the previous call.

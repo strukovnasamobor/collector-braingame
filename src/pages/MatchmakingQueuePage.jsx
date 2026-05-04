@@ -126,6 +126,15 @@ export default function MatchmakingQueuePage() {
                     history.replace(`/online/game/${reconnectId}`);
                     return;
                 }
+                const code = e?.data?.code;
+                if (code === 'INSUFFICIENT_COINS') {
+                    setError(t('coins.insufficient_for_ranked'));
+                    return;
+                }
+                if (code === 'GRID_LOCKED') {
+                    setError(t('coins.grid_locked'));
+                    return;
+                }
                 setError(e.message || t('lobby.matchmaking_error'));
             }
         };
