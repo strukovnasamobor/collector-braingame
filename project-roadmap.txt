@@ -6,12 +6,10 @@
 - add text on game end how many coins is earned (like for confetti) add show earned coins like confetti, make sound and animate it them going to wallet and then wallet adds up
 
 - sometimes moves are rejacted
-
 - adding reinforcment learning on all AI tiers
 - vulnerabilities and exploits checks
 
 Ver. 1.0.0 (1)
-- remove printing logs
 - to production flags: firebase.js, vite.config.js
 - deploy and make TWA with PWA Web Builder
 - Github add tag and upload apk and zipped dist folder
