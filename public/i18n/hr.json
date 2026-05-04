@@ -52,7 +52,7 @@
     "room_code_input_placeholder": "Unesite kod",
     "join_button": "Pridruži se",
     "find_match": "Pronađi meč",
-    "ranked_matchmaking_only": "Rangirana igra koristi automatski pronalazak protivnika. Privatne sobe nisu dostupne.",
+    "ranked_matchmaking_only": "Rangirana igra koristi automatski pronalazak protivnika.\nPrivatne sobe nisu dostupne.",
     "matchmaking_title": "Matchmaking",
     "matchmaking_searching": "Traženje protivnika...",
     "matchmaking_ranked": "Ranked red čekanja",
@@ -76,8 +76,8 @@
     "grid_size_label": "Veličina ploče",
     "timer_label": "Igra s mjeračem vremena (30s po potezu)",
     "ai_label": "AI",
-    "ai_tier_seeker": "Tragač",
-    "ai_tier_hunter": "Lovac",
+    "ai_tier_captor": "Zarobljivač",
+    "ai_tier_hoarder": "Gomilatelj",
     "ai_tier_collector": "Sakupljač",
     "ai_thinking": "{player} razmišlja…",
     "ai_player_name": "{tier} AI",
@@ -105,19 +105,19 @@
     "timeout_loss": "{player} je izgubio zbog neaktivnosti (3 propuštena poteza)!",
     "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Napustiti igru?",
-    "leaver_warning_message": "Ako sada izađete, izgubit ćete do 100 zlatnika, a protivnik će dobiti zlatnike za trenutnu najveću grupu."
+    "leaver_warning_message": "Ako sada izađete, izgubit ćete do 100 zlatnika, a protivnik će dobiti zlatnike za trenutnu najveću grupu.",
+    "leaver_warning_message_ranked": "Ako sada izađete, izgubit ćete ovaj rangirani meč i vaš rejting će pasti."
   },
   "coins": {
     "balance_title": "Vaše stanje Brain Gold Coins-a",
-    "ranked_fee_label": "Ulaz:",
     "unlock_more_title": "Otključajte više ploča",
     "unlock_button": "Otključaj",
     "unlock_confirm_title": "Otključati ploču {size}?",
-    "unlock_confirm_message": "Otključati ploču {size} za {cost} BGC? Trenutno imate {balance}.",
+    "unlock_confirm_message": "Otključati ploču {size} za {cost} BGC?",
     "unlock_failed": "Otključavanje nije uspjelo. Pokušajte ponovno.",
     "insufficient": "Nemate dovoljno BGC.",
-    "insufficient_for_ranked": "Potrebno vam je 100 BGC za rangiranu igru. Osvojite zlato igranjem Standardnih mečeva.",
-    "grid_locked": "Ova veličina ploče je zaključana. Otključajte je u izborniku."
+    "grid_locked": "Ova veličina ploče je zaključana. Otključajte je u izborniku.",
+    "ranked_requires_8x8": "Rangirana igra zahtijeva ploču 8×8. Otključajte je ispod za pokretanje matchmakinga."
   },
   "leaderboard": {
     "title": "Ljestvica",
@@ -137,27 +137,30 @@
   },
   "rules": {
     "title": "Pravila",
-    "description": "Svaki potez ima dva koraka: postavite točku, pa osjenčajte jedno susjedno polje.",
     "items": [
       {
-        "title": "1. Postavite točku",
-        "text": "Prva točka može ići bilo gdje. Kasnije točke ne moraju biti odmah uz drugu točku, ali ako ih postavite dalje od svoje grupe, neće se povezati s njom. Točke se mogu povezivati horizontalno, vertikalno i dijagonalno."
+        "title": "1. Postavljanje točke",
+        "text": "Igrači naizmjenice postavljaju jednu točku svoje boje na prazno polje. Točka se može postaviti na bilo koje prazno polje koje ima barem jednog praznog susjeda. Točke ne moraju biti odmah pokraj druge točke, ali ako ih postavite dalje od svoje grupe, neće se povezati s njom."
       },
       {
-        "title": "2. Osjenčajte polje",
-        "text": "Nakon postavljanja točke morate osjenčati jedno polje koje je susjedno toj točki. Osjenčano polje ostaje blokirano do kraja igre."
+        "title": "2. Eliminiranje polja",
+        "text": "Nakon postavljanja točke morate osjenčati jedno polje pokraj te točke. Osjenčano polje ostaje blokirano za ostatak igre za oba igrača."
       },
       {
         "title": "3. Rezultat",
-        "text": "Rezultat je veličina vaše najveće povezane grupe točaka."
+        "text": "Rezultat je broj točaka u vašoj najvećoj povezanoj grupi točaka."
       },
       {
-        "title": "4. Standardna igra",
-        "text": "Standardne igre dopuštaju izbor veličine ploče i mjerača vremena. Također možete ručno stvarati ili se pridružiti sobama."
+        "title": "4. Kraj igre",
+        "text": "Igra završava kada više nema mogućih poteza. Pobjednik je igrač s najvećim rezultatom. Ako oba igrača imaju isti rezultat, igra je neriješena."
       },
       {
-        "title": "5. Ranked mod",
-        "text": "Ranked igre uvijek koriste ploču 8×8, 30 sekundi po potezu i samo matchmaking. Ako protivnik napusti igru, vraćate se u izbornik i vaš rejting se ne mijenja."
+        "title": "Standardna igra",
+        "text": "Novčići se mogu zaraditi samo u standardnim igrama s matchmakerom. Standardne igre dopuštaju izbor veličine ploče i koriste 30 sekundi po potezu. Također možete ručno stvarati ili se pridružiti sobama, ali tada nećete zaraditi novčiće."
+      },
+      {
+        "title": "Rangirana igra",
+        "text": "Rangirane igre uvijek koriste ploču 8×8, 30 sekundi po potezu i koristi se matchmaking. Morate otključati ploču 8×8 da biste igrali rangirane igre."
       }
     ],
     "close_button": "Zatvori"
@@ -176,7 +179,7 @@
     "online_error": "Greška pri spajanju na online igru",
     "timeout": "Veza je istekla. Pokušajte ponovo.",
     "opponent_left": "Protivnik je napustio igru",
-    "opponent_left_no_rating_change": "Protivnik je napustio ranked meč. Vraćeni ste u izbornik i vaš rejting se nije promijenio.",
+    "opponent_left_no_rating_change": "Protivnik je napustio rangiranu igru. Pobjedili ste - vaš rejting je ažuriran.",
     "invalid_move": "Nevaljano postavljanje",
     "waiting_for_opponent": "Čekanje protivnika...",
     "your_turn": "Tvoj potez",

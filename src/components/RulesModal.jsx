@@ -28,13 +28,12 @@ export default function RulesModal({ open, onClose }) {
       </IonHeader>
       <IonContent className="ion-padding sk-rules-content">
         <div className="sk-rules-shell">
-          <p className="sk-rules-intro">{t('rules.description')}</p>
           <div className="sk-rules-grid">
             {Array.isArray(rules) &&
               rules.map((item, index) => (
                 <section key={`${index}-${item.title}`} className="sk-rule-card">
                   <div className="sk-rule-card-title">{item.title}</div>
-                  <div className="sk-rule-card-text">{item.text}</div>
+                  <div className="sk-rule-card-text" style={{ whiteSpace: 'pre-line' }}>{item.text}</div>
                 </section>
               ))}
           </div>

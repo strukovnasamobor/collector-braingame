@@ -724,6 +724,23 @@ function attackHeavyWeight(idx, ph, who) {
   return Math.max(0.1, 1 + 7 * oppAdj - 1 * ownAdj);
 }
 
+// Defense-focused (Hoarder): build own group while *actively avoiding* opponent
+// contact. Distinct from collectHeavy (which is neutral on oppAdj) — defense
+// uses a negative oppAdj weight to seek isolated growth corridors. Eliminations
+// are conservative: weak opp focus, strong own preservation.
+function defenseHeavyWeight(idx, ph, who) {
+  const opp = who === 1 ? 2 : 1;
+  if (ph === PLACE) {
+    const ownAdj = countAdjacentDots(idx, who);
+    const oppAdj = countAdjacentDots(idx, opp);
+    const deadAdj = countAdjacentDead(idx);
+    return Math.max(0.1, 1 + 4 * ownAdj - 2 * oppAdj - 3 * deadAdj);
+  }
+  const ownAdj = countAdjacentDots(idx, who);
+  const oppAdj = countAdjacentDots(idx, opp);
+  return Math.max(0.1, 1 + 2 * oppAdj - 4 * ownAdj);
+}
+
 // Weighted random pick from `arr` of length `n`, weights via the dispatched
 // policy function (heavyWeight | collectHeavyWeight | attackHeavyWeight).
 // Under light policy (cfg.policy === 'light'), falls back to uniform random.
@@ -1153,6 +1170,7 @@ async function runMCTSRave(cfg) {
   lightPolicyEff = cfg.policy === 'light';
   if (cfg.policy === 'collectHeavy') weightFnEff = collectHeavyWeight;
   else if (cfg.policy === 'attackHeavy') weightFnEff = attackHeavyWeight;
+  else if (cfg.policy === 'DefenseHeavy') weightFnEff = defenseHeavyWeight;
   else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
 
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree

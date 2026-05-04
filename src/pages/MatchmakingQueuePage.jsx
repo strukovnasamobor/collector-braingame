@@ -127,10 +127,6 @@ export default function MatchmakingQueuePage() {
                     return;
                 }
                 const code = e?.data?.code;
-                if (code === 'INSUFFICIENT_COINS') {
-                    setError(t('coins.insufficient_for_ranked'));
-                    return;
-                }
                 if (code === 'GRID_LOCKED') {
                     setError(t('coins.grid_locked'));
                     return;

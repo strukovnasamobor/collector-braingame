@@ -24,11 +24,7 @@ import CoinBalance from '../components/CoinBalance';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useGameExit } from '../contexts/GameExitContext';
-import {
-  useEconomy,
-  RANKED_ENTRY_COST,
-  GRID_UNLOCK_COSTS
-} from '../contexts/EconomyContext';
+import { useEconomy, GRID_UNLOCK_COSTS } from '../contexts/EconomyContext';
 import { createStandardRoom } from '../services/firebaseActions';
 
 function generateGameCode() {
@@ -44,7 +40,7 @@ export default function LobbyScreen() {
   const { coins, isGridUnlocked, purchaseGridUnlock } = useEconomy();
   const history = useHistory();
   const [mode, setMode] = useState(null); // null | 'standard' | 'ranked'
-  const [gridSize, setGridSize] = useState(8);
+  const [gridSize, setGridSize] = useState(6);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [showEmail, setShowEmail] = useState(false);
@@ -128,7 +124,6 @@ export default function LobbyScreen() {
   };
 
   const userLabel = showEmail ? user.email : (displayName || user.email);
-  const rankedDisabled = coins < RANKED_ENTRY_COST;
 
   return (
     <IonPage>
@@ -247,17 +242,14 @@ export default function LobbyScreen() {
               <p style={{ textAlign: 'center', marginTop: 0 }}>
                 {t('lobby.ranked_matchmaking_only')}
               </p>
-              <p style={{ textAlign: 'center', marginTop: 6, fontSize: '0.95rem' }}>
-                {t('coins.ranked_fee_label')} <CoinBalance amount={RANKED_ENTRY_COST} size="sm" />
-              </p>
-              {rankedDisabled && (
-                <p style={{ textAlign: 'center', color: '#dc3545', marginTop: 4 }}>
-                  {t('coins.insufficient_for_ranked')}
+              {!isGridUnlocked(8) && (
+                <p style={{ textAlign: 'center', color: '#dc3545', marginTop: 8, marginBottom: 0 }}>
+                  {t('coins.ranked_requires_8x8')}
                 </p>
               )}
               {error && <p style={{ color: '#dc3545', marginTop: 12 }}>{error}</p>}
               <div className="sk-row-buttons">
-                <IonButton onClick={handleFindMatch} disabled={rankedDisabled}>
+                <IonButton onClick={handleFindMatch} disabled={!isGridUnlocked(8)}>
                   <IonIcon slot="start" icon={flashOutline} />
                   {t('lobby.find_match')}
                 </IonButton>
@@ -265,6 +257,23 @@ export default function LobbyScreen() {
                   {t('lobby.cancel_button')}
                 </IonButton>
               </div>
+              {!isGridUnlocked(8) && (
+                <div className="sk-grid-unlocks">
+                  <div className="sk-grid-unlock-row">
+                    <span className="sk-grid-unlock-label">8×8</span>
+                    <CoinBalance amount={GRID_UNLOCK_COSTS[8]} size="sm" />
+                    <IonButton
+                      size="small"
+                      fill="outline"
+                      disabled={coins < GRID_UNLOCK_COSTS[8] || unlockBusy}
+                      onClick={() => setPendingUnlockSize(8)}
+                    >
+                      <IonIcon slot="start" icon={lockClosedOutline} />
+                      {t('coins.unlock_button')}
+                    </IonButton>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -272,13 +281,16 @@ export default function LobbyScreen() {
         <IonAlert
           isOpen={pendingUnlockSize != null}
           onDidDismiss={() => setPendingUnlockSize(null)}
-          header={t('coins.unlock_confirm_title')}
+          header={
+            pendingUnlockSize != null
+              ? t('coins.unlock_confirm_title', { size: `${pendingUnlockSize}×${pendingUnlockSize}` })
+              : ''
+          }
           message={
             pendingUnlockSize != null
               ? t('coins.unlock_confirm_message', {
                   size: `${pendingUnlockSize}×${pendingUnlockSize}`,
-                  cost: GRID_UNLOCK_COSTS[pendingUnlockSize],
-                  balance: coins
+                  cost: GRID_UNLOCK_COSTS[pendingUnlockSize]
                 })
               : ''
           }

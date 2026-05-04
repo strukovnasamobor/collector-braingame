@@ -719,6 +719,22 @@ async function ensurePlayerDoc(env, authUser, { refreshDisplayName = false } = {
     const seedName = clampDisplayName(refreshDisplayName
       ? (authUser.name || current.displayName || 'Player')
       : (current.displayName || authUser.name || 'Player'));
+    const games = Number(current.games || 0);
+    const wins = Number(current.wins || 0);
+    const losses = Number(current.losses || 0);
+    const draws = Number(current.draws || 0);
+    // Brain Gold Coin economy seeding. Every account — new or pre-economy —
+    // starts with 0 coins and only the 6×6 board unlocked. Players must earn
+    // coins by playing Standard matches to unlock larger boards. Existing
+    // economy state is preserved on subsequent ensures.
+    const existingCoins = Number(current.coins);
+    const existingGrids = Array.isArray(current.unlocks?.onlineGrids)
+      ? current.unlocks.onlineGrids.map(Number).filter((n) => Number.isFinite(n))
+      : null;
+    const coins = Number.isFinite(existingCoins) ? Math.max(0, existingCoins) : 0;
+    const onlineGrids = existingGrids && existingGrids.length > 0
+      ? existingGrids
+      : [6];
     return {
       displayName: seedName || 'Player',
       mu: Number.isFinite(Number(current.mu))
@@ -730,11 +746,13 @@ async function ensurePlayerDoc(env, authUser, { refreshDisplayName = false } = {
       rating: Number.isFinite(Number(current.rating))
         ? Math.min(MAX_DISPLAY_RATING, Math.max(0, Number(current.rating)))
         : DEFAULT_DISPLAY_RATING,
-      games: Number(current.games || 0),
-      wins: Number(current.wins || 0),
-      losses: Number(current.losses || 0),
-      draws: Number(current.draws || 0),
+      games,
+      wins,
+      losses,
+      draws,
       state: current.state || 'idle',
+      coins,
+      unlocks: { onlineGrids },
       updatedAt: new Date().toISOString()
     };
   });
@@ -1039,6 +1057,10 @@ async function handleMatchmakingAction(env, authUser, body) {
     }
 
     const queueGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : requireGridSize(body.gridSize);
+    const unlockedGrids = Array.isArray(profile.unlocks?.onlineGrids) ? profile.unlocks.onlineGrids.map(Number) : [6];
+    if (!unlockedGrids.includes(queueGridSize)) {
+      return errorResponse('GRID_LOCKED', 403);
+    }
     const queueData = {
       uid: authUser.uid,
       mode,
@@ -1141,39 +1163,43 @@ async function handleMatchmakingAction(env, authUser, body) {
     const N = liveCandidates.length;
     if (!N) return corsResponse({ ok: true, gameId: null });
 
-    // Sample-then-closest pairing: pick a uniform random pool of size
-    // K = min(ceil(N/10) + 1, 1000, N), then choose the closest by display
-    // rating. This always pairs whenever ≥1 candidate exists, with no
-    // time-based band widening; rating precision scales smoothly with queue
-    // depth. The +1 lifts the floor so queues of 2-10 actually compare
-    // candidates instead of collapsing to near-random pairing.
-    const poolSize = Math.min(
-      Math.ceil(N / MATCHMAKING_POOL_DIVISOR) + 1,
-      MATCHMAKING_POOL_MAX,
-      N
-    );
-    const pool = liveCandidates.slice();
-    for (let i = 0; i < poolSize; i++) {
-      const j = i + Math.floor(Math.random() * (pool.length - i));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    pool.length = poolSize;
-
+    // Standard mode: pick uniformly at random — ratings are not updated in
+    // Standard, so proximity has no meaning. Ranked mode: sample a random pool
+    // of size K = min(ceil(N/10) + 1, 1000, N) then pick the closest by rating
+    // so skilled players are matched fairly.
     let chosen = null;
-    let bestDiff = Infinity;
-    for (const entry of pool) {
-      const rating = Number(entry.data.rating || DEFAULT_DISPLAY_RATING);
-      const diff = Math.abs(rating - selfDisplayRating);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        chosen = { candidate: entry, displayRating: rating };
+    if (mode === 'standard') {
+      const idx = Math.floor(Math.random() * N);
+      const entry = liveCandidates[idx];
+      chosen = { candidate: entry, displayRating: Number(entry.data.rating || DEFAULT_DISPLAY_RATING) };
+    } else {
+      const poolSize = Math.min(
+        Math.ceil(N / MATCHMAKING_POOL_DIVISOR) + 1,
+        MATCHMAKING_POOL_MAX,
+        N
+      );
+      const pool = liveCandidates.slice();
+      for (let i = 0; i < poolSize; i++) {
+        const j = i + Math.floor(Math.random() * (pool.length - i));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      pool.length = poolSize;
+
+      let bestDiff = Infinity;
+      for (const entry of pool) {
+        const rating = Number(entry.data.rating || DEFAULT_DISPLAY_RATING);
+        const diff = Math.abs(rating - selfDisplayRating);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          chosen = { candidate: entry, displayRating: rating };
+        }
       }
     }
     if (!chosen) return corsResponse({ ok: true, gameId: null });
 
     // Bot-aware pairing: a candidate's *uid* (the player identity going into the
     // game doc) is `entry.data.uid`; the *queue doc id* (`entry.id`) may differ
-    // for bots that use a composite id like `bot:hunter_8` so the same bot uid
+    // for bots that use a composite id like `bot:captor_8` so the same bot uid
     // can hold queue presence at multiple grid sizes simultaneously. Humans have
     // entry.data.uid === entry.id so this collapses to the original logic.
     const candidateUid = chosen.candidate.data?.uid || chosen.candidate.id;
@@ -1221,14 +1247,13 @@ async function handleMatchmakingAction(env, authUser, body) {
       }
     }
 
-    // P1/P2 assignment: humans use joinedAt + lex-uid tiebreak. When the
-    // opponent is a bot, deterministically put the human first so the human
-    // gets the natural opening move (and so the human's name appears first in
-    // game-over/leaderboard text).
+    // P1/P2 assignment: randomised in all cases. For human vs bot, 50/50 coin
+    // flip. For human vs human, arrival order is a sufficient proxy for
+    // randomness (unpredictable in practice), with lex-uid as tiebreak.
     const selfJoined = liveSelf.data.joinedAtMs || 0;
     const opponentJoined = liveCandidate.joinedAtMs || 0;
     const selfIsP1 = candidateIsBot
-      ? true
+      ? (Math.random() < 0.5)
       : (selfJoined < opponentJoined || (selfJoined === opponentJoined && authUser.uid < candidateUid));
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
@@ -1342,6 +1367,98 @@ async function handleMatchmakingAction(env, authUser, body) {
   return errorResponse('Unknown matchmaking action.', 400);
 }
 
+// Brain Gold Coin economy — additive update to a single player's wallet.
+// Clamped at 0 so the leaver penalty never produces a negative balance.
+async function bumpPlayerCoins(env, uid, delta) {
+  if (!uid || !Number.isFinite(delta) || delta === 0) return;
+  try {
+    await mergePlayerWithRetry(env, uid, (raw) => {
+      const cur = Number.isFinite(Number(raw.coins)) ? Number(raw.coins) : 0;
+      const next = Math.max(0, cur + delta);
+      return {
+        ...raw,
+        email: undefined,
+        coins: next,
+        updatedAt: new Date().toISOString()
+      };
+    });
+  } catch (err) {
+    console.warn('[bumpPlayerCoins] failed', uid, delta, err?.message);
+  }
+}
+
+// Computes and applies coin grants for a game that just transitioned to a
+// terminal state (finished, left). Pure no-op for private rooms (off-economy).
+//
+// Standard MM payouts (system-minted, additive):
+//   • Decisive end: winner += winnerGroup × 10, loser += loserGroup × 1
+//   • Draw: each player += groupSize × 5
+//   • Forfeit (leave or 3-turn timeout): stayer += stayerCurrentGroup × 10
+//
+// Coins only apply to Standard matchmade games. Ranked has no coin economy.
+async function awardCoinsForGame(env, game) {
+  if (!game || game.source !== 'matchmaking') return;
+  const mode = normalizeMode(game.mode);
+  const isStandard = mode === 'standard';
+  if (!isStandard) return;
+  const player1uid = game.player1uid;
+  const player2uid = game.player2uid;
+  if (!player1uid || !player2uid) return;
+
+  // Compute final group sizes from the canonical game state, not from
+  // result.score1/2 — those aren't set on status:'left' (standard leave path).
+  const size = parseGridSize(game.gridSize);
+  const state = normalizeGameState(game.gameStateJSON, size);
+  const group1 = getBiggestGroup(state, size, 1);
+  const group2 = getBiggestGroup(state, size, 2);
+
+  let delta1 = 0;
+  let delta2 = 0;
+
+  const isTimeout = !!game.result?.timeout;
+  const leaverUid = game.leftBy || null;
+  const isForfeit = isTimeout || !!leaverUid;
+
+  if (isForfeit) {
+    let leaverNum;
+    if (isTimeout) {
+      leaverNum = game.result.loser;
+    } else if (leaverUid === player1uid) {
+      leaverNum = 1;
+    } else if (leaverUid === player2uid) {
+      leaverNum = 2;
+    } else {
+      return;
+    }
+    const stayerNum = leaverNum === 1 ? 2 : 1;
+    if (leaverNum === 1) delta1 = -100; else delta2 = -100;
+    if (isStandard) {
+      const stayerGroup = stayerNum === 1 ? group1 : group2;
+      const stayerReward = stayerGroup * 10;
+      if (stayerNum === 1) delta1 = stayerReward; else delta2 = stayerReward;
+    }
+  } else if (isStandard) {
+    const winner = game.result?.winner; // 0=draw, 1, or 2
+    if (winner === 1) {
+      delta1 = group1 * 10;
+      delta2 = group2 * 1;
+    } else if (winner === 2) {
+      delta1 = group1 * 1;
+      delta2 = group2 * 10;
+    } else if (winner === 0) {
+      delta1 = group1 * 5;
+      delta2 = group2 * 5;
+    }
+  }
+  // Ranked + natural end: no payout (rating already handled).
+
+  if (delta1 === 0 && delta2 === 0) return;
+  await Promise.all([
+    bumpPlayerCoins(env, player1uid, delta1),
+    bumpPlayerCoins(env, player2uid, delta2)
+  ]);
+}
+
 async function finalizeMatchCleanup(env, game) {
   if (!game) return;
   const mode = normalizeMode(game.mode);
@@ -1434,6 +1551,7 @@ async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) 
           turnDeadlineMs: null
         };
         await writeDocument(env, 'games', gameId, finishedGame, gameDoc.updateTime);
+        await awardCoinsForGame(env, finishedGame);
         await finalizeMatchCleanup(env, finishedGame);
         return { applied: true, finished: true };
       }
@@ -1530,6 +1648,8 @@ async function applyRankedForfeit(env, gameDoc, gameId, forfeitingUid) {
     updatedAt: new Date().toISOString()
   }));
 
+  // Ranked has no coin economy — no payout, no leaver penalty.
+  await awardCoinsForGame(env, finishedGame);
   await finalizeMatchCleanup(env, finishedGame);
   return finishedGame;
 }
@@ -1632,7 +1752,10 @@ export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol) 
     } catch (_) {
       throw new HttpError('Game state changed. Please retry.', 409);
     }
-    if (result) await finalizeMatchCleanup(env, update);
+    if (result) {
+      await awardCoinsForGame(env, update);
+      await finalizeMatchCleanup(env, update);
+    }
     return { ok: true };
   }
 
@@ -1761,6 +1884,7 @@ async function handleGameAction(env, authUser, body) {
       leftBy: authUser.uid
     };
     await writeDocument(env, 'games', gameId, leftGame, game.updateTime);
+    await awardCoinsForGame(env, leftGame);
     await finalizeMatchCleanup(env, leftGame);
     return corsResponse({ ok: true });
   }
@@ -1794,6 +1918,42 @@ async function handleGameAction(env, authUser, body) {
   }
 
   return errorResponse('Unknown game action.', 400);
+}
+
+const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000, 12: 100000 };
+
+async function handleUnlockGrid(env, authUser, body) {
+  const size = Number(body.size);
+  if (!GRID_UNLOCK_COSTS[size]) return errorResponse('Invalid grid size.', 400);
+
+  let lastErr;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const doc = await getDocument(env, 'players', authUser.uid);
+    if (!doc) return errorResponse('Player profile not found.', 404);
+    const data = doc.data || {};
+
+    const existingGrids = Array.isArray(data.unlocks?.onlineGrids)
+      ? data.unlocks.onlineGrids.map(Number).filter((n) => Number.isFinite(n))
+      : [6];
+    if (existingGrids.includes(size)) return corsResponse({ ok: true, alreadyOwned: true });
+
+    const cost = GRID_UNLOCK_COSTS[size];
+    const currentCoins = Number.isFinite(Number(data.coins)) ? Math.max(0, Number(data.coins)) : 0;
+    if (currentCoins < cost) return errorResponse('INSUFFICIENT_COINS', 402);
+
+    const newGrids = [...new Set([...existingGrids, size])].sort((a, b) => a - b);
+    try {
+      await writeDocument(env, 'players', authUser.uid, {
+        ...data,
+        coins: currentCoins - cost,
+        unlocks: { ...data.unlocks, onlineGrids: newGrids }
+      }, doc.updateTime);
+      return corsResponse({ ok: true, coins: currentCoins - cost, unlockedGrids: newGrids });
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  return errorResponse('Unlock failed. Please try again.', 500);
 }
 
 async function handleRankedFinalize(env, authUser, body) {
@@ -1952,6 +2112,9 @@ async function handleRequest(request, env) {
   if (url.pathname === '/ranked/finalize') {
     return handleRankedFinalize(env, authUser, body);
   }
+  if (url.pathname === '/economy/unlock-grid') {
+    return handleUnlockGrid(env, authUser, body);
+  }
 
   return errorResponse('Not found.', 404);
 }
@@ -2049,6 +2212,87 @@ async function sweepStaleGames(env) {
 // regardless of status. Uses Firestore batched `:commit` so a full page of 300
 // deletes costs one subrequest — well inside the Free plan's 50-subrequest cap
 // even with several pages. Loops until no rows remain or we hit the safety cap.
+// Removes bot queue entries that the per-minute `seedBots` cron has stopped
+// refreshing — i.e., orphans from a renamed tier (e.g. seeker → captor),
+// retired gridSize, or any other config change that drops a bot from the
+// canonical set. Canonical bots get `updatedAtMs = now` on every cron tick;
+// anything older than the threshold is by definition no longer in the seed
+// list. Best-effort: a brief cron outage that delays seeding won't trigger
+// false positives because the threshold is 5× the cron interval.
+async function pruneStaleBots(env) {
+  const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes; cron runs every minute
+  const cutoff = Date.now() - STALE_THRESHOLD_MS;
+  const collections = ['matchmakingQueue_standard', 'matchmakingQueue_ranked'];
+  let totalDeleted = 0;
+
+  for (const collectionId of collections) {
+    let response;
+    try {
+      response = await firestoreFetch(env, ':runQuery', {
+        method: 'POST',
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'updatedAtMs' },
+                op: 'LESS_THAN',
+                value: { integerValue: String(cutoff) }
+              }
+            },
+            limit: 200
+          }
+        })
+      });
+    } catch (err) {
+      console.error(`[pruneStaleBots] runQuery threw on ${collectionId}`, err?.message);
+      continue;
+    }
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error(`[pruneStaleBots] runQuery ${response.status} on ${collectionId}: ${txt}`);
+      continue;
+    }
+
+    const rows = await response.json();
+    const stale = rows
+      .map((r) => r.document)
+      .filter(Boolean)
+      .map((doc) => ({
+        name: doc.name,
+        id: doc.name?.split('/').pop(),
+        data: firestoreObjectFromFields(doc.fields || {})
+      }))
+      // Bots only — humans are pruned by the existing inline staleness check
+      // in matchmaking, with their own semantics (relabel to 'matched' vs.
+      // delete depends on context). Don't disturb human entries here.
+      .filter((entry) => entry.data?.isBot === true || isBotUid(entry.data?.uid));
+
+    if (stale.length === 0) continue;
+
+    const writes = stale.map((entry) => ({ delete: entry.name }));
+    try {
+      const commit = await firestoreFetch(env, ':commit', {
+        method: 'POST',
+        body: JSON.stringify({ writes })
+      });
+      if (!commit.ok) {
+        const txt = await commit.text();
+        console.error(`[pruneStaleBots] commit ${commit.status} on ${collectionId}: ${txt}`);
+        continue;
+      }
+      totalDeleted += stale.length;
+      for (const entry of stale) {
+        console.log(`[pruneStaleBots] deleted orphan ${collectionId}/${entry.id} (uid=${entry.data?.uid})`);
+      }
+    } catch (err) {
+      console.error(`[pruneStaleBots] commit threw on ${collectionId}`, err?.message);
+    }
+  }
+
+  if (totalDeleted > 0) console.log(`[pruneStaleBots] removed ${totalDeleted} stale bot entries`);
+}
+
 async function purgeOldGames(env) {
   const PURGE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const PAGE_SIZE = 300;
@@ -2275,6 +2519,11 @@ export default {
       return;
     }
     ctx.waitUntil(sweepStaleGames(env));
-    ctx.waitUntil(seedBots(env, { getDocument, writeDocument }));
+    // seedBots first: it refreshes updatedAtMs on every canonical bot, so the
+    // subsequent prune step only sees orphans (renamed tiers, retired grid
+    // sizes, etc.).
+    ctx.waitUntil(
+      seedBots(env, { getDocument, writeDocument }).then(() => pruneStaleBots(env))
+    );
   }
 };

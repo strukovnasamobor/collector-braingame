@@ -52,7 +52,7 @@
     "room_code_input_placeholder": "Enter code",
     "join_button": "Join",
     "find_match": "Find Match",
-    "ranked_matchmaking_only": "Ranked uses matchmaking only. Private rooms are disabled.",
+    "ranked_matchmaking_only": "Ranked uses matchmaking only.\nPrivate rooms are disabled.",
     "matchmaking_title": "Matchmaking",
     "matchmaking_searching": "Searching for an opponent...",
     "matchmaking_ranked": "Ranked queue",
@@ -76,8 +76,8 @@
     "grid_size_label": "Board Size",
     "timer_label": "Play with timer (30s per move)",
     "ai_label": "AI",
-    "ai_tier_seeker": "Seeker",
-    "ai_tier_hunter": "Hunter",
+    "ai_tier_captor": "Captor",
+    "ai_tier_hoarder": "Hoarder",
     "ai_tier_collector": "Collector",
     "ai_thinking": "{player} is thinking…",
     "ai_player_name": "{tier} AI",
@@ -105,19 +105,19 @@
     "timeout_loss": "{player} lost due to inactivity (3 missed turns)!",
     "rating_change": "Rating: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Leave the game?",
-    "leaver_warning_message": "If you leave now, you will lose up to 100 coins and your opponent will receive coins for their current group."
+    "leaver_warning_message": "If you leave now, you will lose up to 100 coins and your opponent will receive coins for their current max connected group.",
+    "leaver_warning_message_ranked": "If you leave now, you will lose this ranked match and your rating will drop."
   },
   "coins": {
     "balance_title": "Your Brain Gold Coin balance",
-    "ranked_fee_label": "Entry fee:",
     "unlock_more_title": "Unlock more boards",
     "unlock_button": "Unlock",
     "unlock_confirm_title": "Unlock {size} board?",
-    "unlock_confirm_message": "Unlock the {size} board for {cost} BGC? You currently have {balance}.",
+    "unlock_confirm_message": "Unlock the {size} board for {cost} BGC?",
     "unlock_failed": "Unlock failed. Please try again.",
     "insufficient": "Not enough BGC.",
-    "insufficient_for_ranked": "You need 100 BGC to play Ranked. Earn BGC by playing Standard matches.",
-    "grid_locked": "This board size is locked. Unlock it in the lobby first."
+    "grid_locked": "This board size is locked. Unlock it in the lobby first.",
+    "ranked_requires_8x8": "Ranked play requires the 8×8 board. Unlock it below to start matchmaking."
   },
   "leaderboard": {
     "title": "Leaderboard",
@@ -137,27 +137,30 @@
   },
   "rules": {
     "title": "Rules",
-    "description": "Each turn has two steps: place a dot, then eliminate one adjacent cell.",
     "items": [
       {
-        "title": "1. Place a dot",
-        "text": "Your first dot can go anywhere. Later dots do not have to be next to another dot, but if they are placed away from your group, they will not connect to it. Dots can connect horizontally, vertically, and diagonally."
+        "title": "1. Placing a dot",
+        "text": "Players take turns placing one dot of their color on an empty cell. The dot can be placed on any empty cell that has at least one empty neighbor. Dots do not have to be immediately next to another dot, but if you place them further from your group they won't connect to it."
       },
       {
-        "title": "2. Eliminate a cell",
-        "text": "After placing a dot, you must eliminate one cell next to that dot. The eliminated cell becomes blocked for the rest of the game."
+        "title": "2. Eliminating a cell",
+        "text": "After placing a dot you must eliminate one adjacent cell. The eliminated cell remains blocked for the rest of the game for both players."
       },
       {
         "title": "3. Score points",
-        "text": "Your score is the size of your largest connected group of dots."
+        "text": "Your score is the number of dots in your largest connected group of dots."
       },
       {
-        "title": "4. Standard mode",
-        "text": "Standard games let you choose the board size and timer. You can also create or join rooms manually."
+        "title": "4. Game end",
+        "text": "The game ends when no more moves are possible. The highest score wins. If both players have the same score, it's a draw."
       },
       {
-        "title": "5. Ranked mode",
-        "text": "Ranked games always use an 8×8 board, 30-second turns, and matchmaking only. If your opponent leaves, you return to the lobby and your rating does not change."
+        "title": "Standard game",
+        "text": "Coins can only be earned in standard games with matchmaking. Standard games allow you to choose the board size and include a 30-second timer. You can also create or join rooms manually, but you won't earn coins from those games."
+      },
+      {
+        "title": "Ranked game",
+        "text": "Ranked games always use an 8×8 board, 30-second turns, and matchmaking only. You must unlock the 8×8 board to play ranked games."
       }
     ],
     "close_button": "Close"
@@ -176,7 +179,7 @@
     "online_error": "Error connecting to online game",
     "timeout": "Connection timeout. Please try again.",
     "opponent_left": "Opponent has left the game",
-    "opponent_left_no_rating_change": "Opponent has left the ranked match. You were returned to lobby and your rating did not change.",
+    "opponent_left_no_rating_change": "Opponent has left the ranked match. You won - your rating has been updated.",
     "invalid_move": "Invalid move",
     "waiting_for_opponent": "Waiting for opponent...",
     "your_turn": "Your turn",

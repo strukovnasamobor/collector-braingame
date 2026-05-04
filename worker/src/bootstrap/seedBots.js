@@ -34,28 +34,56 @@ export async function seedBots(env, helpers) {
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
 
-  // 1. Profile docs — create only if missing; never overwrite an existing
-  // bot profile so its rating can drift from match outcomes.
+  // 1. Profile docs — create if missing; otherwise backfill the Brain Gold
+  // Coin economy fields without overwriting rating/W-D-L state. Bots get
+  // every online grid unlocked since they need to be matchable on any size,
+  // and coins default to 0 (rewards/penalties accumulate normally from
+  // matches; bots aren't gated by their wallet for entry since ranked is
+  // free to enter and bots are pre-unlocked on every board).
+  const ALL_GRIDS = [6, 8, 10, 12];
   for (const tier of ALL_TIERS) {
     const uid = botUidFor(tier);
     const existing = await getDocument(env, 'players', uid);
-    if (existing) continue;
-    const initialRating = BOT_INITIAL_RATING[tier];
-    const mu = muFromDisplay(initialRating);
-    await writeDocument(env, 'players', uid, {
-      displayName: BOT_DISPLAY[tier],
-      mu,
-      sigma: DEFAULT_SIGMA,
-      rating: initialRating,
-      games: 0,
-      wins: 0,
-      losses: 0,
-      draws: 0,
-      state: 'idle',
-      isBot: true,
-      botTier: tier,
-      updatedAt: nowIso
-    });
+    if (!existing) {
+      const initialRating = BOT_INITIAL_RATING[tier];
+      const mu = muFromDisplay(initialRating);
+      await writeDocument(env, 'players', uid, {
+        displayName: BOT_DISPLAY[tier],
+        mu,
+        sigma: DEFAULT_SIGMA,
+        rating: initialRating,
+        games: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        state: 'idle',
+        isBot: true,
+        botTier: tier,
+        coins: 0,
+        unlocks: { onlineGrids: ALL_GRIDS },
+        updatedAt: nowIso
+      });
+      continue;
+    }
+    // Existing bot doc — backfill economy fields if missing, leave the rest.
+    const data = existing.data || {};
+    const hasCoins = Number.isFinite(Number(data.coins));
+    const grids = Array.isArray(data.unlocks?.onlineGrids)
+      ? data.unlocks.onlineGrids.map(Number).filter((n) => Number.isFinite(n))
+      : [];
+    const hasAllGrids = ALL_GRIDS.every((g) => grids.includes(g));
+    if (hasCoins && hasAllGrids) continue;
+    try {
+      await writeDocument(env, 'players', uid, {
+        ...data,
+        coins: hasCoins ? Number(data.coins) : 0,
+        unlocks: { onlineGrids: ALL_GRIDS },
+        updatedAt: nowIso
+      }, existing.updateTime);
+    } catch (_) {
+      // Race with another writer (concurrent cron tick or match finalize) —
+      // harmless; the next tick will retry.
+    }
   }
 
   // 2. Queue entries — UPSERT every cron tick to refresh updatedAtMs.

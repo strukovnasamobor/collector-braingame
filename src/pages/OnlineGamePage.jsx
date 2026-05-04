@@ -139,7 +139,9 @@ export default function OnlineGamePage() {
       tabRoot: '/online',
       silent: !!finalResult,
       title: showLeaverWarning ? t('game.leaver_warning_title') : undefined,
-      message: showLeaverWarning ? t('game.leaver_warning_message') : undefined,
+      message: showLeaverWarning
+        ? t(data?.mode === 'ranked' ? 'game.leaver_warning_message_ranked' : 'game.leaver_warning_message')
+        : undefined,
       onConfirm: handleQuit
     });
     return () => clearExit('/online');
