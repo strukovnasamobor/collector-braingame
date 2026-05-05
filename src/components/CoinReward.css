@@ -20,7 +20,7 @@
   background: rgba(0, 0, 0, 0.6);
   box-shadow: 0 8px 28px rgba(240, 180, 41, 0.35);
   color: #f0b429;
-  animation: sk-milestone-pop 3000ms ease-out forwards;
+  animation: sk-milestone-pop 5000ms ease-out forwards;
 }
 
 .sk-coin-reward-label {

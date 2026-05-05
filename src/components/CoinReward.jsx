@@ -24,11 +24,16 @@ export default function CoinReward({ amount, onDone }) {
       });
     }).catch(() => {});
 
-    // Find wallet position in the header (top-right)
-    const walletEl = document.querySelector('.sk-header-coins');
+    // Find wallet position in the header. Prefer the IonButton wrapper —
+    // it always has layout dimensions; the inner CoinBalance span sometimes
+    // reports a zero-width box if Ionic's shadow DOM is mid-layout.
+    const walletEl =
+      document.querySelector('.sk-header-wallet-btn') ||
+      document.querySelector('.sk-header-coins');
     const wr = walletEl?.getBoundingClientRect();
-    const walletX = wr ? wr.left + wr.width / 2 : window.innerWidth - 70;
-    const walletY = wr ? wr.top + wr.height / 2 : 24;
+    const walletX = wr && wr.width > 0 ? wr.left + wr.width / 2 : window.innerWidth - 110;
+    const walletY = wr && wr.height > 0 ? wr.top + wr.height / 2 : 30;
+    console.log('[CoinReward] wallet target:', { found: !!walletEl, walletX, walletY, rect: wr });
 
     // Coins start from screen centre (roughly where the game board is)
     const originX = window.innerWidth / 2;
@@ -86,7 +91,7 @@ export default function CoinReward({ amount, onDone }) {
     const tDone = setTimeout(() => {
       coins.forEach((el) => el.remove());
       onDone?.();
-    }, 3000);
+    }, 4500);
 
     return () => {
       cancelAnimationFrame(raf);
