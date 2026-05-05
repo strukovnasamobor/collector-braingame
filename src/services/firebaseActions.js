@@ -56,8 +56,8 @@ export async function cancelStandardRoom({ code }) {
   return callBackend('/room/cancel', { code });
 }
 
-export async function submitGameMove({ gameId, row, col }) {
-  return callBackend('/game/move', { gameId, row, col });
+export async function submitGameMove({ gameId, row, col, kind }) {
+  return callBackend('/game/move', { gameId, row, col, kind });
 }
 
 export async function submitGameTimeout({ gameId }) {
@@ -88,8 +88,8 @@ export async function runMatchmaker({ mode }) {
   return callBackend('/matchmaking/run', { mode });
 }
 
-export async function cancelMatchmaking({ userId }) {
-  return callBackend('/matchmaking/cancel', { userId });
+export async function cancelMatchmaking({ mode }) {
+  return callBackend('/matchmaking/cancel', { mode });
 }
 
 export async function heartbeatMatchmaking({ mode }) {

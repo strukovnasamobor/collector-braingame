@@ -20,11 +20,12 @@ import {
     heartbeatMatchmaking
 } from '../hooks/matchmakingService';
 import { validateGame } from '../hooks/matchmakingService';
-import { clampGridSize } from '../utils/sanitize';
 
 function useQuery() {
     return new URLSearchParams(useLocation().search);
 }
+
+const ALLOWED_GRID_SIZES = [4, 6, 8, 10, 12];
 
 export default function MatchmakingQueuePage() {
     const { t } = useI18n();
@@ -40,21 +41,35 @@ export default function MatchmakingQueuePage() {
         [mode]
     );
 
-    const standardGridSize = clampGridSize(query.get('gridSize'));
+    // Standard mode requires an explicit ?gridSize= param. If it's missing or
+    // invalid, send the user back to the lobby rather than silently picking a
+    // default — the lobby owns grid selection.
+    const gridParam = query.get('gridSize');
+    const rawGridSize = gridParam == null ? null : Number(gridParam);
+    const standardGridSize = ALLOWED_GRID_SIZES.includes(rawGridSize) ? rawGridSize : null;
 
     useEffect(() => {
         if (!loading && !user) history.replace('/online/auth');
     }, [loading, user, history]);
 
     useEffect(() => {
+        if (safeMode === 'standard' && standardGridSize == null) {
+            history.replace('/online/lobby');
+        }
+    }, [safeMode, standardGridSize, history]);
+
+    useEffect(() => {
         if (!user) return undefined;
+        if (safeMode === 'standard' && standardGridSize == null) return undefined;
 
         let active = true;
         let trying = false;
         let unsubscribe = () => { };
         let retryTimer = null;
         let heartbeatTimer = null;
-        let lastRedirectedGameId = null; // Track to avoid redirecting twice to same game
+        let lastRedirectedGameId = null;
+        let queueWasPresent = false;
+        let reEnqueuing = false;
 
         const attemptMatch = async () => {
             if (trying) return;
@@ -62,25 +77,82 @@ export default function MatchmakingQueuePage() {
             try {
                 const gameId = await tryFindMatch({ userId: user.uid, mode: safeMode });
                 if (active && gameId) {
-                    // validate backend that this user is actually a participant in the game
                     const ok = await validateGame({ gameId });
                     if (ok) history.replace(`/online/game/${gameId}`);
                 }
             } catch (_) {
-                // Keep searching; transient failures should not stop queue retries.
+                // Keep searching; transient failures (incl. 429s) shouldn't stop retries.
             } finally {
                 trying = false;
             }
         };
 
-        const start = async () => {
+        const armTimers = () => {
+            if (retryTimer) window.clearInterval(retryTimer);
+            if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+            retryTimer = window.setInterval(() => {
+                if (!active) return;
+                void attemptMatch();
+            }, 5000);
+            heartbeatTimer = window.setInterval(() => {
+                if (!active) return;
+                void heartbeatMatchmaking(safeMode).catch(() => { });
+            }, 20000);
+        };
+
+        const disarmTimers = () => {
+            if (retryTimer) { window.clearInterval(retryTimer); retryTimer = null; }
+            if (heartbeatTimer) { window.clearInterval(heartbeatTimer); heartbeatTimer = null; }
+        };
+
+        const reEnqueue = async () => {
+            if (reEnqueuing) return;
+            reEnqueuing = true;
             try {
                 const isRanked = safeMode === 'ranked';
+                await enqueueForMatch({
+                    user,
+                    mode: safeMode,
+                    gridSize: isRanked ? 8 : standardGridSize,
+                    timerEnabled: true
+                });
+                queueWasPresent = true;
+            } catch (e) {
+                if (!active) return;
+                // While the tab was hidden, the user may have been matched (or
+                // already had an active game). Redirect rather than silently
+                // staying stuck on the queue page.
+                const reconnectId = e?.data?.activeGameId;
+                if (reconnectId) {
+                    history.replace(`/online/game/${reconnectId}`);
+                    return;
+                }
+                // Any other failure → bail to lobby; the user can retry.
+                history.replace('/online/lobby');
+            } finally {
+                reEnqueuing = false;
+            }
+        };
+
+        const onVisibility = () => {
+            if (!active) return;
+            if (document.visibilityState === 'visible') {
+                armTimers();
+                void attemptMatch();
+                void heartbeatMatchmaking(safeMode).catch(() => { });
+            } else {
+                disarmTimers();
+            }
+        };
+
+        const start = async () => {
+            try {
                 // Always cancel any previous matchmaking to clear stale queue state.
                 // The worker enqueue handler accepts overwrite of stale entries, so no
                 // propagation sleep is needed here.
                 await cancelMatchmaking(user.uid, safeMode);
 
+                const isRanked = safeMode === 'ranked';
                 await enqueueForMatch({
                     user,
                     mode: safeMode,
@@ -88,39 +160,41 @@ export default function MatchmakingQueuePage() {
                     // Online games (both ranked and standard) always run with the timer.
                     timerEnabled: true
                 });
+                queueWasPresent = true;
 
                 unsubscribe = listenForMatch(user.uid, safeMode, async (queueEntry) => {
-                    if (!active || !queueEntry) return;
-                    if (queueEntry.status === 'matched' && queueEntry.gameId) {
-                        // Avoid redirecting to same game twice (prevents listener from firing on cached state)
-                        if (queueEntry.gameId !== lastRedirectedGameId) {
-                            lastRedirectedGameId = queueEntry.gameId;
-                            // validate before navigating
-                            try {
-                                const ok = await validateGame({ gameId: queueEntry.gameId });
-                                if (ok) history.replace(`/online/game/${queueEntry.gameId}`);
-                            } catch (e) {
-                                // ignore invalid or transient errors
+                    if (!active) return;
+                    if (queueEntry) {
+                        queueWasPresent = true;
+                        if (queueEntry.status === 'matched' && queueEntry.gameId) {
+                            if (queueEntry.gameId !== lastRedirectedGameId) {
+                                lastRedirectedGameId = queueEntry.gameId;
+                                try {
+                                    const ok = await validateGame({ gameId: queueEntry.gameId });
+                                    if (ok) history.replace(`/online/game/${queueEntry.gameId}`);
+                                } catch (_) {
+                                    // ignore invalid or transient errors
+                                }
                             }
                         }
+                        return;
+                    }
+                    // queueEntry is null — our doc is gone. If we previously had one
+                    // and the page is visible, re-establish presence at the user's
+                    // selected grid size. (Likely a server-side stale-prune after a
+                    // long background interval.)
+                    if (queueWasPresent && document.visibilityState === 'visible') {
+                        queueWasPresent = false;
+                        void reEnqueue();
                     }
                 });
 
                 await attemptMatch();
 
-                // Re-run matchmaking regularly so ranked range widening over time can take effect.
-                retryTimer = window.setInterval(() => {
-                    void attemptMatch();
-                }, 3000);
-
-                // Heartbeat keeps the queue entry alive so it isn't pruned as stale.
-                heartbeatTimer = window.setInterval(() => {
-                    if (!active) return;
-                    void heartbeatMatchmaking(safeMode).catch(() => { });
-                }, 10000);
+                if (document.visibilityState === 'visible') armTimers();
+                document.addEventListener('visibilitychange', onVisibility);
             } catch (e) {
                 if (!active) return;
-                // Backend says we're already in an active game — reconnect instead of erroring out.
                 const reconnectId = e?.data?.activeGameId;
                 if (reconnectId) {
                     history.replace(`/online/game/${reconnectId}`);
@@ -139,9 +213,13 @@ export default function MatchmakingQueuePage() {
 
         return () => {
             active = false;
+            document.removeEventListener('visibilitychange', onVisibility);
             unsubscribe();
-            if (retryTimer) window.clearInterval(retryTimer);
-            if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+            disarmTimers();
+            // Best-effort: tear down the queue entry server-side so a remount
+            // (StrictMode / route churn / bfcache) starts from a clean slate.
+            // Server is authoritative; we don't await.
+            void cancelMatchmaking(user.uid, safeMode).catch(() => { });
         };
     }, [
         user,

@@ -354,15 +354,18 @@ export function useOnlineGame(gameId) {
 
       // Send to the server in order: each click chains onto the previous send,
       // so an eliminate is only dispatched after its preceding place is durable.
+      // On failure we clear the entire queue: the queued eliminate belongs to
+      // the same turn as the failed place, so it would land server-side as a
+      // re-interpreted placement (server dispatches by phase) and corrupt turn
+      // alignment. Bailing the whole turn is the safe move.
       submitChainRef.current = submitChainRef.current
         .catch(() => {})
         .then(async () => {
           try {
-            await submitGameMove({ gameId, row, col });
+            await submitGameMove({ gameId, row, col, kind: newMove.kind });
           } catch (e) {
-            setPendingMoves((prev) => prev.filter((m) => m !== newMove));
+            setPendingMoves([]);
             setLocalError('notifications.move_rejected');
-            throw e;
           }
         });
     },

@@ -1,13 +1,18 @@
 import { importX509, jwtVerify } from 'jose';
-import { seedBots } from './bootstrap/seedBots';
+import { ensureBotProfilesOnce } from './bootstrap/seedBots';
 import { chooseAIMove as chooseBotMove } from './ai/aiEngine';
 import {
   ALL_TIERS,
+  BOT_DISPLAY,
   BOT_UID_PREFIX,
+  STANDARD_BOT_GRID_SIZES,
   isBotUid,
   tierFromBotUid,
-  botUidFor
+  botUidFor,
+  standardBotQueueDocId,
+  rankedBotQueueDocId
 } from './ai/bots';
+import { getBotProfile, invalidateBotProfile } from './ai/botProfileCache';
 
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -1118,47 +1123,104 @@ async function handleMatchmakingAction(env, authUser, body) {
     const self = queue.data;
     if (self.status !== 'searching') return corsResponse({ ok: true, gameId: null });
 
+    // Profile docs for `players/bot:{tier}` are required by handleRankedFinalize.
+    // First /run on a fresh isolate ensures they exist; subsequent calls no-op.
+    await ensureBotProfilesOnce(env, { getDocument, writeDocument });
+
+    const selfGridSize = Number(self.gridSize) || 6;
+    const selfTimerEnabled = !!self.timerEnabled;
+
     const candidates = await queryQueueDocs(
       env,
       mode,
       mode === 'standard'
-        ? { gridSize: Number(self.gridSize) || 6, timerEnabled: !!self.timerEnabled }
+        ? { gridSize: selfGridSize, timerEnabled: selfTimerEnabled }
         : {}
     );
-    const others = candidates.filter((entry) => entry.id !== authUser.uid);
-    if (!others.length) return corsResponse({ ok: true, gameId: null });
+    const humanOthers = candidates.filter((entry) => entry.id !== authUser.uid);
 
-    const now = Date.now();
-    const selfDisplayRating = Number(self.rating || DEFAULT_DISPLAY_RATING);
-    const selfGridSize = Number(self.gridSize) || 6;
-    const selfTimerEnabled = !!self.timerEnabled;
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
 
+    // Filter humans first so the bot-inclusion decision below can see how many
+    // *live* humans are actually matchable, not how many docs are sitting in
+    // the collection (some may be stale and get pruned here).
     const liveCandidates = [];
-    for (const entry of others) {
-      const entryUid = entry.data?.uid || entry.id;
-      const entryIsBot = isBotUid(entryUid);
-      if (!entryIsBot && !isFreshQueueEntry(entry)) {
+    let liveHumanCount = 0;
+    for (const entry of humanOthers) {
+      if (!isFreshQueueEntry(entry)) {
         // Stale entries are deleted (not relabeled) so the queue collection doesn't grow
         // unbounded under abuse. Best-effort: another writer may have already removed it.
-        // Bot entries are intentionally exempt: the cron supervisor refreshes them, and
-        // pruning a bot doc would defeat the "always in queue" semantics.
         try {
           await deleteDocument(env, queueCollection, entry.id);
         } catch (_) {}
         continue;
       }
-      // Bots stay 'searching' across many parallel matches and never carry
-      // matchedWith/gameId on their queue entries, so only enforce that strict
-      // freshness check on humans.
       if (entry.data?.status !== 'searching') continue;
-      if (!entryIsBot && (entry.data?.matchedWith || entry.data?.gameId)) continue;
+      if (entry.data?.matchedWith || entry.data?.gameId) continue;
       if (mode === 'standard') {
         const candGrid = Number(entry.data.gridSize) || 6;
         const candTimer = !!entry.data.timerEnabled;
         if (candGrid !== selfGridSize || candTimer !== selfTimerEnabled) continue;
       }
       liveCandidates.push(entry);
+      liveHumanCount++;
     }
+
+    // Bot inclusion policy: a bot is a candidate alongside any live human
+    // (random pick can land on either), but if the user is alone in the queue
+    // they wait HUMAN_WAIT_MS before bots are eligible. Without this, /run
+    // would always match the soloer to a bot before any second human had a
+    // chance to enqueue.
+    const HUMAN_WAIT_MS = 10 * 1000;
+    const selfWaitMs = nowMs - Number(self.joinedAtMs || nowMs);
+    const botsConfigured =
+      mode === 'standard'
+        ? (STANDARD_BOT_GRID_SIZES.includes(selfGridSize) && selfTimerEnabled)
+        : (mode === 'ranked' && selfGridSize === 8 && selfTimerEnabled);
+    const includeBots =
+      botsConfigured && (liveHumanCount > 0 || selfWaitMs >= HUMAN_WAIT_MS);
+
+    if (includeBots) {
+      // Standard admits all 3 tiers on any STANDARD_BOT_GRID_SIZES grid.
+      // Ranked admits all 3 tiers only on the canonical 8x8 timer-on config.
+      // Ranked reads fresh ratings every time so closest-rating selection
+      // doesn't pair off the per-isolate cache (warm isolates can hold
+      // stale ratings indefinitely if they never run /ranked/finalize).
+      const forceFresh = mode === 'ranked';
+      for (const tier of ALL_TIERS) {
+        const uid = botUidFor(tier);
+        const profile = await getBotProfile(env, uid, getDocument, { forceFresh });
+        const docId = mode === 'standard'
+          ? standardBotQueueDocId(tier, selfGridSize)
+          : rankedBotQueueDocId(tier);
+        liveCandidates.push({
+          id: docId,
+          updateTime: null,
+          data: {
+            uid,
+            isBot: true,
+            botTier: tier,
+            displayName: BOT_DISPLAY[tier],
+            mode,
+            gridSize: mode === 'ranked' ? 8 : selfGridSize,
+            timerEnabled: true,
+            mu: profile.mu,
+            sigma: profile.sigma,
+            rating: profile.rating,
+            status: 'searching',
+            gameId: null,
+            matchedWith: null,
+            joinedAtMs: nowMs,
+            updatedAtMs: nowMs,
+            updatedAt: nowIso
+          }
+        });
+      }
+    }
+
+    const now = nowMs;
+    const selfDisplayRating = Number(self.rating || DEFAULT_DISPLAY_RATING);
 
     const N = liveCandidates.length;
     if (!N) return corsResponse({ ok: true, gameId: null });
@@ -1213,7 +1275,10 @@ async function handleMatchmakingAction(env, authUser, body) {
       return corsResponse({ ok: true, gameId: null });
     }
 
-    const candidateQueue = await getDocument(env, queueCollection, chosen.candidate.id);
+    // Virtual bots have no Firestore queue doc — reuse the synthesized entry.
+    const candidateQueue = candidateIsBot
+      ? { data: chosen.candidate.data, updateTime: null }
+      : await getDocument(env, queueCollection, chosen.candidate.id);
     if (!candidateQueue) return corsResponse({ ok: true, gameId: null });
 
     const liveSelf = await getDocument(env, queueCollection, authUser.uid);
@@ -1259,7 +1324,12 @@ async function handleMatchmakingAction(env, authUser, body) {
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
 
     const gameId = `game_${crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase()}`;
-    const matchGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : parseGridSize(self.gridSize);
+    // Use liveSelf (re-fetched and validated above) rather than the snapshot
+    // captured at the top of /run — between those two reads the user may have
+    // re-enqueued at a different gridSize from another tab, and the game must
+    // be created at the value the validation step actually agreed on.
+    const matchGridSize = mode === 'ranked' ? RANKED_GRID_SIZE : parseGridSize(liveSelf.data.gridSize);
+    const matchTimerEnabled = mode === 'ranked' ? true : !!liveSelf.data.timerEnabled;
     await writeDocument(env, 'games', gameId, {
       gameCode: null,
       mode,
@@ -1270,7 +1340,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       player2uid: selfIsP1 ? candidateUid : authUser.uid,
       player2name: clampDisplayName(buildPlayerName(p2)),
       gridSize: matchGridSize,
-      timerEnabled: mode === 'ranked' ? true : !!self.timerEnabled,
+      timerEnabled: matchTimerEnabled,
       currentPlayer: 1,
       phase: 'place',
       lastPlaces: null,
@@ -1279,7 +1349,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       timeouts: { p1: 0, p2: 0 },
       result: null,
       createdAt: new Date().toISOString(),
-      turnDeadlineMs: (mode === 'ranked' || !!self.timerEnabled) ? Date.now() + TURN_DURATION_MS : null
+      turnDeadlineMs: matchTimerEnabled ? Date.now() + TURN_DURATION_MS : null
     });
 
     // Stronger guards: verify neither queue entry already references a game.
@@ -1288,7 +1358,14 @@ async function handleMatchmakingAction(env, authUser, body) {
     if ((liveSelf.data && liveSelf.data.gameId) ||
         (!candidateIsBot && liveCandidate && liveCandidate.gameId)) {
       try {
-        await writeDocument(env, 'games', gameId, { ...{ status: 'cancelled', createdAt: new Date().toISOString() } });
+        await writeDocument(
+          env,
+          'games',
+          gameId,
+          { status: 'cancelled' },
+          undefined,
+          { updateMask: ['status'] }
+        );
       } catch (e) {}
       return corsResponse({ ok: true, gameId: null });
     }
@@ -1305,18 +1382,8 @@ async function handleMatchmakingAction(env, authUser, body) {
         updatedAt: new Date().toISOString()
       }, liveSelf.updateTime);
 
-      if (candidateIsBot) {
-        // Don't transition the bot's queue entry — refresh updatedAtMs only so
-        // the next prune sweep treats it as fresh, and it remains matchable.
-        await writeDocument(env, queueCollection, chosen.candidate.id, {
-          ...liveCandidate,
-          status: 'searching',
-          gameId: null,
-          matchedWith: null,
-          updatedAtMs: Date.now(),
-          updatedAt: new Date().toISOString()
-        }, candidateQueue.updateTime);
-      } else {
+      if (!candidateIsBot) {
+        // Bots have no Firestore queue doc — nothing to update on the bot side.
         await writeDocument(env, queueCollection, chosen.candidate.id, {
           ...liveCandidate,
           status: 'matched',
@@ -1358,7 +1425,22 @@ async function handleMatchmakingAction(env, authUser, body) {
       return corsResponse({ ok: true, gameId });
     } catch (err) {
       try {
-        await writeDocument(env, 'games', gameId, { ...{ status: 'cancelled', cancelledReason: 'queue_update_failed', cancelledAt: new Date().toISOString() } });
+        // updateMask: keep player1uid/player2uid/gridSize/etc. on the doc — a
+        // bare PATCH would strip them, which makes the human's already-loaded
+        // OnlineGamePage decide they aren't a participant and bounce them to
+        // the lobby. We only need to flip status + record the reason.
+        await writeDocument(
+          env,
+          'games',
+          gameId,
+          {
+            status: 'cancelled',
+            cancelledReason: 'queue_update_failed',
+            cancelledAt: new Date().toISOString()
+          },
+          undefined,
+          { updateMask: ['status', 'cancelledReason', 'cancelledAt'] }
+        );
       } catch (e) {}
       return corsResponse({ ok: true, gameId: null });
     }
@@ -1667,7 +1749,7 @@ async function handleGameValidate(env, authUser, body) {
 // Durable Objects, which must be able to play moves without a Firebase ID
 // token. Throws HttpError on validation failures so the HTTP wrapper can map
 // them back to status codes; the DO catches and logs.
-export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol) {
+export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol, requestKind = null) {
   const game = await getDocument(env, 'games', gameId);
   if (!game) throw new HttpError('Game not found.', 404);
   const current = game.data;
@@ -1678,6 +1760,19 @@ export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol) 
 
   const playerNumber = current.player1uid === callerUid ? 1 : 2;
   if (current.currentPlayer !== playerNumber) throw new HttpError('Not your turn.', 412);
+
+  // Soft-validate the client's intent against the server's authoritative phase.
+  // Without this, a client whose place was rejected can have a queued eliminate
+  // silently re-interpreted as a placement (server dispatches by phase only),
+  // dropping a dot on the cell the player meant to eliminate. Tighten to required
+  // once all clients send kind. MatchBot omits kind by design — it reads phase
+  // from the same snapshot it then plays into, so mismatch is impossible.
+  if (requestKind && requestKind !== 'place' && requestKind !== 'eliminate') {
+    throw new HttpError('Invalid move kind.', 400);
+  }
+  if (requestKind && requestKind !== current.phase) {
+    throw new HttpError('Phase mismatch — please retry.', 412);
+  }
 
   // Hard deadline enforcement: a move arriving past the turn deadline + grace is rejected
   // so the wall-clock timer is actually binding (otherwise the deadline is only enforced by
@@ -1783,7 +1878,7 @@ async function handleGameAction(env, authUser, body) {
 
   if (action === 'move') {
     try {
-      await applyMoveInternal(env, authUser.uid, gameId, body.row, body.col);
+      await applyMoveInternal(env, authUser.uid, gameId, body.row, body.col, body.kind || null);
       return corsResponse({ ok: true });
     } catch (err) {
       if (err instanceof HttpError) return errorResponse(err.message, err.status);
@@ -2035,6 +2130,11 @@ async function handleRankedFinalize(env, authUser, body) {
   await setPlayerState(env, current.player1uid, 'idle');
   await setPlayerState(env, current.player2uid, 'idle');
 
+  // Bots' rating cache must be invalidated so the next /run picks up the
+  // fresh number rather than the previous (now stale) cached entry.
+  if (isBotUid(current.player1uid)) invalidateBotProfile(current.player1uid);
+  if (isBotUid(current.player2uid)) invalidateBotProfile(current.player2uid);
+
   return corsResponse({ ok: true, result });
 }
 
@@ -2218,87 +2318,6 @@ async function sweepStaleGames(env) {
 // regardless of status. Uses Firestore batched `:commit` so a full page of 300
 // deletes costs one subrequest — well inside the Free plan's 50-subrequest cap
 // even with several pages. Loops until no rows remain or we hit the safety cap.
-// Removes bot queue entries that the per-minute `seedBots` cron has stopped
-// refreshing — i.e., orphans from a renamed tier (e.g. seeker → captor),
-// retired gridSize, or any other config change that drops a bot from the
-// canonical set. Canonical bots get `updatedAtMs = now` on every cron tick;
-// anything older than the threshold is by definition no longer in the seed
-// list. Best-effort: a brief cron outage that delays seeding won't trigger
-// false positives because the threshold is 5× the cron interval.
-async function pruneStaleBots(env) {
-  const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes; cron runs every minute
-  const cutoff = Date.now() - STALE_THRESHOLD_MS;
-  const collections = ['matchmakingQueue_standard', 'matchmakingQueue_ranked'];
-  let totalDeleted = 0;
-
-  for (const collectionId of collections) {
-    let response;
-    try {
-      response = await firestoreFetch(env, ':runQuery', {
-        method: 'POST',
-        body: JSON.stringify({
-          structuredQuery: {
-            from: [{ collectionId }],
-            where: {
-              fieldFilter: {
-                field: { fieldPath: 'updatedAtMs' },
-                op: 'LESS_THAN',
-                value: { integerValue: String(cutoff) }
-              }
-            },
-            limit: 200
-          }
-        })
-      });
-    } catch (err) {
-      console.error(`[pruneStaleBots] runQuery threw on ${collectionId}`, err?.message);
-      continue;
-    }
-    if (!response.ok) {
-      const txt = await response.text();
-      console.error(`[pruneStaleBots] runQuery ${response.status} on ${collectionId}: ${txt}`);
-      continue;
-    }
-
-    const rows = await response.json();
-    const stale = rows
-      .map((r) => r.document)
-      .filter(Boolean)
-      .map((doc) => ({
-        name: doc.name,
-        id: doc.name?.split('/').pop(),
-        data: firestoreObjectFromFields(doc.fields || {})
-      }))
-      // Bots only — humans are pruned by the existing inline staleness check
-      // in matchmaking, with their own semantics (relabel to 'matched' vs.
-      // delete depends on context). Don't disturb human entries here.
-      .filter((entry) => entry.data?.isBot === true || isBotUid(entry.data?.uid));
-
-    if (stale.length === 0) continue;
-
-    const writes = stale.map((entry) => ({ delete: entry.name }));
-    try {
-      const commit = await firestoreFetch(env, ':commit', {
-        method: 'POST',
-        body: JSON.stringify({ writes })
-      });
-      if (!commit.ok) {
-        const txt = await commit.text();
-        console.error(`[pruneStaleBots] commit ${commit.status} on ${collectionId}: ${txt}`);
-        continue;
-      }
-      totalDeleted += stale.length;
-      for (const entry of stale) {
-        console.log(`[pruneStaleBots] deleted orphan ${collectionId}/${entry.id} (uid=${entry.data?.uid})`);
-      }
-    } catch (err) {
-      console.error(`[pruneStaleBots] commit threw on ${collectionId}`, err?.message);
-    }
-  }
-
-  if (totalDeleted > 0) console.log(`[pruneStaleBots] removed ${totalDeleted} stale bot entries`);
-}
-
 async function purgeOldGames(env) {
   const PURGE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const PAGE_SIZE = 300;
@@ -2517,19 +2536,16 @@ export default {
     return applyCorsOrigin(response, allowOrigin);
   },
   async scheduled(event, env, ctx) {
-    // Dispatch by cron expression so the per-minute heartbeat job and the
-    // weekly purge stay independent. event.cron is the literal pattern from
+    // Dispatch by cron expression so the per-minute sweep and the weekly
+    // purge stay independent. event.cron is the literal pattern from
     // wrangler.toml that triggered this invocation.
     if (event.cron === '0 0 * * SAT') {
       ctx.waitUntil(purgeOldGames(env));
       return;
     }
+    // Bots are virtual (synthesized in /matchmaking/run from constants), so
+    // the cron no longer seeds queue docs or prunes them. Profile bootstrap
+    // is lazy via ensureBotProfilesOnce on first /run per isolate.
     ctx.waitUntil(sweepStaleGames(env));
-    // seedBots first: it refreshes updatedAtMs on every canonical bot, so the
-    // subsequent prune step only sees orphans (renamed tiers, retired grid
-    // sizes, etc.).
-    ctx.waitUntil(
-      seedBots(env, { getDocument, writeDocument }).then(() => pruneStaleBots(env))
-    );
   }
 };
