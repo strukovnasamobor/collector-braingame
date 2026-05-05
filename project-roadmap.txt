@@ -1,13 +1,11 @@
-- earning only in standard matchmaking game, not in private rooms - show msg when crating and jioning private rooms
-- winning/draw/loosing rewards, leaving -100 - show msg in matchmaking
-   Winner: 10 x score BGC\nDraw: 5 x score BGC\nLoser: 1 x score BGC
-   Leaving: -100 BGC
-- move wallet from lobby to the header and show it when user is logged in
-- add text on game end how many coins is earned (like for confetti) add show earned coins like confetti, make sound and animate it them going to wallet and then wallet adds up
+? add text on game end how many coins is earned (like for confetti) add show earned coins like confetti, make sound and animate it them going to wallet and then wallet adds up
 
-- sometimes moves are rejacted
-- adding reinforcment learning on all AI tiers
+- test human vs human matchmaking after optimization
+- check sometimes moves are rejacted
 - vulnerabilities and exploits checks
+
+- adding Collector Alpha for ranked games
+- adding reinforcment learning on all AI tiers
 
 Ver. 1.0.0 (1)
 - to production flags: firebase.js, vite.config.js
@@ -21,7 +19,6 @@ OFFLINE AND ONLINE AI TIERS
 1. Captor - Zarobljivač     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 2. Hoarder - Gomilatelj     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 3. Collector - Sakupljač    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-*** TODO ***
 - Only in ranked games:
     - Collector Alpha { kind: 'alphazero' } + reinforcemnt learning
 

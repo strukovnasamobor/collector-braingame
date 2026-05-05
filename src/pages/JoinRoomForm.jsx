@@ -68,6 +68,9 @@ export default function JoinRoomForm() {
             {error && (
               <p style={{ color: '#dc3545', margin: '12px 0 0' }}>{error}</p>
             )}
+            <p style={{ textAlign: 'center', fontSize: '0.85em', opacity: 0.6, margin: '12px 0 4px' }}>
+              {t('lobby.private_room_no_coins')}
+            </p>
             <div className="sk-row-buttons">
               <IonButton disabled={joining} onClick={handleJoin}>
                 <IonIcon slot="start" icon={enterOutline} />

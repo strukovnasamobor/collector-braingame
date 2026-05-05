@@ -196,6 +196,17 @@ export default function MatchmakingQueuePage() {
                         <p style={{ textAlign: 'center', marginBottom: 0 }}>
                             {t('lobby.matchmaking_searching')}
                         </p>
+                        {safeMode === 'standard' && (
+                            <div className="sk-reward-grid">
+                                {t('lobby.matchmaking_coin_rewards').split('\n').flatMap((line, i) => {
+                                    const sep = line.indexOf(': ');
+                                    return [
+                                        <span key={`l${i}`} className="sk-reward-label">{line.slice(0, sep)}:</span>,
+                                        <span key={`v${i}`} className="sk-reward-value">{line.slice(sep + 2)}</span>
+                                    ];
+                                })}
+                            </div>
+                        )}
                         {error && <p style={{ color: '#dc3545', marginTop: 10 }}>{error}</p>}
                         <div className="sk-row-buttons">
                             <IonButton fill="outline" color="medium" onClick={cancel}>

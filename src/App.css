@@ -143,21 +143,47 @@
 }
 
 .sk-coin-balance .sk-coin-icon {
-  width: 1.1em;
-  height: 1.1em;
+  width: 24px;
+  height: 24px;
   display: block;
 }
 
 .sk-coin-balance--md {
-  font-size: 1.05rem;
+  font-size: 16px;
 }
 
 .sk-coin-balance--lg {
-  font-size: 1.4rem;
+  font-size: 16px;
 }
 
 .sk-coin-balance--sm {
-  font-size: 0.85rem;
+  font-size: 16px;
+}
+
+.sk-reward-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px;
+  margin: 10px auto 0;
+  font-size: 0.82em;
+  opacity: 0.65;
+  width: fit-content;
+}
+
+.sk-reward-label {
+  text-align: right;
+}
+
+.sk-reward-value {
+  text-align: right;
+}
+
+.sk-header-wallet-btn::part(native) {
+  padding: 8px;
+}
+
+.sk-wallet-alert .alert-message {
+  white-space: pre-line;
 }
 
 .sk-coin-row {
@@ -295,6 +321,7 @@
   font-weight: 600;
   letter-spacing: 0.01em;
 }
+
 
 .sk-game-over-actions {
   display: flex;

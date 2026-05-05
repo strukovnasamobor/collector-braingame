@@ -43,13 +43,19 @@ export default function WaitingRoom() {
       <IonContent fullscreen>
         <div className="sk-menu-content">
           <div className="sk-lobby-panel">
-            <p style={{ textAlign: 'center', marginTop: 0 }}>
-              {t('lobby.waiting_room')}
+            <p style={{ textAlign: 'center', margin: '0 0 4px' }}>
+              {t('lobby.room_code')}:
             </p>
             <p className="sk-room-code">{code}</p>
-            <div style={{ textAlign: 'center', margin: '12px 0' }}>
+            <div style={{ textAlign: 'center', margin: '12px 0 8px' }}>
               <IonSpinner />
             </div>
+            <p style={{ textAlign: 'center', margin: '0 0 4px' }}>
+              {t('lobby.waiting_room')}
+            </p>
+            <p style={{ textAlign: 'center', fontSize: '0.85em', opacity: 0.6, margin: '4px 0 12px' }}>
+              {t('lobby.private_room_no_coins')}
+            </p>
             <div className="sk-row-buttons">
               <IonButton fill="outline" color="medium" onClick={cancel}>
                 <IonIcon slot="start" icon={closeCircleOutline} />

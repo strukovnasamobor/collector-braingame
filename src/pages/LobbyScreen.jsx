@@ -158,9 +158,6 @@ export default function LobbyScreen() {
                   {t('lobby.create_ranked')}
                 </IonButton>
               </div>
-              <div className="sk-coin-row" title={t('coins.balance_title')}>
-                <CoinBalance size="md" />
-              </div>
             </>
           )}
 

@@ -1,0 +1,55 @@
+.sk-coin-reward-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 9000;
+}
+
+.sk-coin-reward-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25em;
+  text-align: center;
+  padding: 14px 28px;
+  border: 2px solid #f0b429;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 28px rgba(240, 180, 41, 0.35);
+  color: #f0b429;
+  animation: sk-milestone-pop 3000ms ease-out forwards;
+}
+
+.sk-coin-reward-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 5vh;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+.sk-coin-reward-icon {
+  width: 1em;
+  height: 1em;
+}
+
+@keyframes sk-wallet-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.5); }
+  70%  { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+
+.sk-wallet-pulse {
+  animation: sk-wallet-pulse 0.55s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-coin-reward-stack { animation: none; }
+  .sk-wallet-pulse { animation: none; }
+}

@@ -8,7 +8,7 @@ import {
   IonSpinner
 } from '@ionic/react';
 import AppHeader from '../components/AppHeader';
-import CoinBalance from '../components/CoinBalance';
+import CoinReward from '../components/CoinReward';
 import GameBoard from '../components/GameBoard';
 import MilestoneCelebration from '../components/MilestoneCelebration';
 import TimesUpFlash from '../components/TimesUpFlash';
@@ -48,7 +48,20 @@ export default function OnlineGamePage() {
 
   const [alertError, setAlertError] = useState('');
   const [opponentLeftOpen, setOpponentLeftOpen] = useState(false);
+  const [coinRewardShown, setCoinRewardShown] = useState(false);
   const { registerExit, clearExit } = useGameExit();
+
+  useEffect(() => {
+    if (!finalResult) return;
+    console.log('[CoinReward debug]', {
+      finalResult,
+      myPlayerNumber,
+      source: data?.source,
+      mode: data?.mode,
+      coinDelta1: finalResult.coinDelta1,
+      coinDelta2: finalResult.coinDelta2,
+    });
+  }, [finalResult]);
 
   const watchPlayers = useMemo(
     () => (myPlayerNumber ? [myPlayerNumber] : []),
@@ -179,13 +192,11 @@ export default function OnlineGamePage() {
         <>
           {'\n'}
           <span className="sk-game-over-coins">
-            {p1} {formatDelta(coinDelta1)}{' '}
-            <CoinBalance amount={Math.abs(coinDelta1)} size="sm" />
+            {p1} {formatDelta(coinDelta1)} BGC
           </span>
           {'\n'}
           <span className="sk-game-over-coins">
-            {p2} {formatDelta(coinDelta2)}{' '}
-            <CoinBalance amount={Math.abs(coinDelta2)} size="sm" />
+            {p2} {formatDelta(coinDelta2)} BGC
           </span>
         </>
       ) : null;
@@ -289,20 +300,41 @@ export default function OnlineGamePage() {
             // Show the Game Over panel + spinner the instant the game state
             // flips to finished/cancelled/left, then swap the spinner for the
             // real winner + rating line as soon as `finalResult` is computed.
-            <div
-              className="sk-status sk-status--game-over"
-              style={{ whiteSpace: 'pre-line' }}
-            >
-              <div className="sk-game-over-title">{t('game.game_over_title')}</div>
-              <div className="sk-game-over-message">
-                {finalResult ? buildGameOverMessage() : <IonSpinner name="dots" />}
+            <>
+              <div
+                className="sk-status sk-status--game-over"
+                style={{ whiteSpace: 'pre-line' }}
+              >
+                <div className="sk-game-over-title">{t('game.game_over_title')}</div>
+                <div className="sk-game-over-message">
+                  {finalResult ? buildGameOverMessage() : <IonSpinner name="dots" />}
+                </div>
+                <div className="sk-game-over-actions">
+                  <IonButton size="small" fill="outline" onClick={handleQuit}>
+                    {t('game.main_menu_button')}
+                  </IonButton>
+                </div>
               </div>
-              <div className="sk-game-over-actions">
-                <IonButton size="small" fill="outline" onClick={handleQuit}>
-                  {t('game.main_menu_button')}
-                </IonButton>
-              </div>
-            </div>
+              {(() => {
+                if (!finalResult || coinRewardShown) return null;
+                const { coinDelta1, coinDelta2 } = finalResult;
+                const myCoinDelta = myPlayerNumber === 1 ? coinDelta1 : coinDelta2;
+                if (
+                  data.source === 'matchmaking' &&
+                  data.mode === 'standard' &&
+                  typeof myCoinDelta === 'number' &&
+                  myCoinDelta > 0
+                ) {
+                  return (
+                    <CoinReward
+                      amount={myCoinDelta}
+                      onDone={() => setCoinRewardShown(true)}
+                    />
+                  );
+                }
+                return null;
+              })()}
+            </>
           ) : (
             <div
               key={`status-${statusPulseKey}`}

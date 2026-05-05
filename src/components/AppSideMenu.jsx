@@ -74,38 +74,44 @@ export default function AppSideMenu() {
           </IonToolbar>
         </IonHeader>
         <IonContent>
-          <IonList lines="none">
-            <IonMenuToggle autoHide={false}>
-              <IonItem button detail={false} onClick={() => setLangOpen(true)}>
-                <IonIcon slot="start" icon={languageOutline} />
-                <IonLabel>{t('menu.change_language')}</IonLabel>
-              </IonItem>
-              <IonItem button detail={false} onClick={handleSourceCode}>
-                <IonIcon slot="start" icon={logoGithub} />
-                <IonLabel>{t('menu.source_code')}</IonLabel>
-              </IonItem>
-              {user && (
-                <>
-                  <IonItem
-                    button
-                    detail={false}
-                    onClick={() => { setRenameError(''); setRenameOpen(true); }}
-                  >
-                    <IonIcon slot="start" icon={pencilOutline} />
-                    <IonLabel>{t('menu.change_name')}</IonLabel>
-                  </IonItem>
-                  <IonItem button detail={false} onClick={() => setDeleteOpen(true)}>
-                    <IonIcon slot="start" icon={trashOutline} />
-                    <IonLabel>{t('menu.delete_account')}</IonLabel>
-                  </IonItem>
-                  <IonItem button detail={false} onClick={handleSignOut}>
-                    <IonIcon slot="start" icon={logOutOutline} />
-                    <IonLabel>{t('header.sign_out')}</IonLabel>
-                  </IonItem>
-                </>
-              )}
-            </IonMenuToggle>
-          </IonList>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <IonList lines="none" style={{ flex: 1 }}>
+              <IonMenuToggle autoHide={false}>
+                <IonItem button detail={false} onClick={() => setLangOpen(true)}>
+                  <IonIcon slot="start" icon={languageOutline} />
+                  <IonLabel>{t('menu.change_language')}</IonLabel>
+                </IonItem>
+                {user && (
+                  <>
+                    <IonItem
+                      button
+                      detail={false}
+                      onClick={() => { setRenameError(''); setRenameOpen(true); }}
+                    >
+                      <IonIcon slot="start" icon={pencilOutline} />
+                      <IonLabel>{t('menu.change_name')}</IonLabel>
+                    </IonItem>
+                    <IonItem button detail={false} onClick={() => setDeleteOpen(true)}>
+                      <IonIcon slot="start" icon={trashOutline} />
+                      <IonLabel>{t('menu.delete_account')}</IonLabel>
+                    </IonItem>
+                    <IonItem button detail={false} onClick={handleSignOut}>
+                      <IonIcon slot="start" icon={logOutOutline} />
+                      <IonLabel>{t('header.sign_out')}</IonLabel>
+                    </IonItem>
+                  </>
+                )}
+              </IonMenuToggle>
+            </IonList>
+            <IonList lines="none">
+              <IonMenuToggle autoHide={false}>
+                <IonItem button detail={false} onClick={handleSourceCode}>
+                  <IonIcon slot="start" icon={logoGithub} />
+                  <IonLabel>{t('menu.source_code')}</IonLabel>
+                </IonItem>
+              </IonMenuToggle>
+            </IonList>
+          </div>
         </IonContent>
       </IonMenu>
 

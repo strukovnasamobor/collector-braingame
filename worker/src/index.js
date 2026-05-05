@@ -1396,17 +1396,14 @@ async function bumpPlayerCoins(env, uid, delta) {
 //   • Forfeit (leave or 3-turn timeout): stayer += stayerCurrentGroup × 10
 //
 // Coins only apply to Standard matchmade games. Ranked has no coin economy.
-async function awardCoinsForGame(env, game) {
-  if (!game || game.source !== 'matchmaking') return;
-  const mode = normalizeMode(game.mode);
-  const isStandard = mode === 'standard';
-  if (!isStandard) return;
+// Returns { delta1, delta2 } — both 0 for ineligible games.
+function computeCoinDeltas(game) {
+  if (!game || game.source !== 'matchmaking') return { delta1: 0, delta2: 0 };
+  if (normalizeMode(game.mode) !== 'standard') return { delta1: 0, delta2: 0 };
   const player1uid = game.player1uid;
   const player2uid = game.player2uid;
-  if (!player1uid || !player2uid) return;
+  if (!player1uid || !player2uid) return { delta1: 0, delta2: 0 };
 
-  // Compute final group sizes from the canonical game state, not from
-  // result.score1/2 — those aren't set on status:'left' (standard leave path).
   const size = parseGridSize(game.gridSize);
   const state = normalizeGameState(game.gameStateJSON, size);
   const group1 = getBiggestGroup(state, size, 1);
@@ -1428,34 +1425,31 @@ async function awardCoinsForGame(env, game) {
     } else if (leaverUid === player2uid) {
       leaverNum = 2;
     } else {
-      return;
+      return { delta1: 0, delta2: 0 };
     }
     const stayerNum = leaverNum === 1 ? 2 : 1;
     if (leaverNum === 1) delta1 = -100; else delta2 = -100;
-    if (isStandard) {
-      const stayerGroup = stayerNum === 1 ? group1 : group2;
-      const stayerReward = stayerGroup * 10;
-      if (stayerNum === 1) delta1 = stayerReward; else delta2 = stayerReward;
-    }
-  } else if (isStandard) {
-    const winner = game.result?.winner; // 0=draw, 1, or 2
+    const stayerGroup = stayerNum === 1 ? group1 : group2;
+    if (stayerNum === 1) delta1 = stayerGroup * 10; else delta2 = stayerGroup * 10;
+  } else {
+    const winner = game.result?.winner;
     if (winner === 1) {
-      delta1 = group1 * 10;
-      delta2 = group2 * 1;
+      delta1 = group1 * 10; delta2 = group2 * 1;
     } else if (winner === 2) {
-      delta1 = group1 * 1;
-      delta2 = group2 * 10;
+      delta1 = group1 * 1; delta2 = group2 * 10;
     } else if (winner === 0) {
-      delta1 = group1 * 5;
-      delta2 = group2 * 5;
+      delta1 = group1 * 5; delta2 = group2 * 5;
     }
   }
-  // Ranked + natural end: no payout (rating already handled).
+  return { delta1, delta2 };
+}
 
+async function awardCoinsForGame(env, game) {
+  const { delta1, delta2 } = computeCoinDeltas(game);
   if (delta1 === 0 && delta2 === 0) return;
   await Promise.all([
-    bumpPlayerCoins(env, player1uid, delta1),
-    bumpPlayerCoins(env, player2uid, delta2)
+    bumpPlayerCoins(env, game.player1uid, delta1),
+    bumpPlayerCoins(env, game.player2uid, delta2)
   ]);
 }
 
@@ -1550,6 +1544,10 @@ async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) 
           timeouts: { ...timeouts, [myKey]: newCount },
           turnDeadlineMs: null
         };
+        const { delta1: coinDelta1, delta2: coinDelta2 } = computeCoinDeltas(finishedGame);
+        if (coinDelta1 !== 0 || coinDelta2 !== 0) {
+          finishedGame.result = { ...finishedGame.result, coinDelta1, coinDelta2 };
+        }
         await writeDocument(env, 'games', gameId, finishedGame, gameDoc.updateTime);
         await awardCoinsForGame(env, finishedGame);
         await finalizeMatchCleanup(env, finishedGame);
@@ -1742,6 +1740,10 @@ export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol) 
       update.status = 'finished';
       update.result = result;
       update.turnDeadlineMs = null;
+      const { delta1: coinDelta1, delta2: coinDelta2 } = computeCoinDeltas(update);
+      if (coinDelta1 !== 0 || coinDelta2 !== 0) {
+        update.result = { ...result, coinDelta1, coinDelta2 };
+      }
     } else {
       update.currentPlayer = playerNumber === 1 ? 2 : 1;
       update.phase = 'place';
@@ -1883,6 +1885,10 @@ async function handleGameAction(env, authUser, body) {
       status: 'left',
       leftBy: authUser.uid
     };
+    const { delta1: coinDelta1, delta2: coinDelta2 } = computeCoinDeltas(leftGame);
+    if (coinDelta1 !== 0 || coinDelta2 !== 0) {
+      leftGame.result = { ...(leftGame.result || {}), coinDelta1, coinDelta2 };
+    }
     await writeDocument(env, 'games', gameId, leftGame, game.updateTime);
     await awardCoinsForGame(env, leftGame);
     await finalizeMatchCleanup(env, leftGame);

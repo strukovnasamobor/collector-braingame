@@ -1,6 +1,6 @@
 name = "collector-game-backend"
 main = "src/index.js"
-compatibility_date = "2026-04-28"
+compatibility_date = "2025-07-18"
 
 [vars]
 FIREBASE_PROJECT_ID = "collector-braingame"

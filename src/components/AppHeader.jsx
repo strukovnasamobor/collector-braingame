@@ -7,6 +7,7 @@ import {
   IonButtons,
   IonButton,
   IonIcon,
+  IonAlert,
   IonMenuToggle
 } from '@ionic/react';
 import {
@@ -17,13 +18,21 @@ import {
 } from 'ionicons/icons';
 import { useI18n } from '../contexts/I18nContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useEconomy } from '../contexts/EconomyContext';
+import useAnimatedCounter from '../hooks/useAnimatedCounter';
+import CoinBalance from './CoinBalance';
 import RulesModal from './RulesModal';
 
 export default function AppHeader({ title }) {
   const { t } = useI18n();
   const { isDark, toggleTheme } = useTheme();
+  const { user } = useAuth();
+  const { coins } = useEconomy();
+  const displayCoins = useAnimatedCounter(coins);
   const location = useLocation();
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [walletOpen, setWalletOpen] = useState(false);
 
   let derivedTitle = t('app_title');
   if (location.pathname.startsWith('/online')) {
@@ -32,7 +41,6 @@ export default function AppHeader({ title }) {
     derivedTitle = t('tabs.offline');
   }
 
-  // Close rules modal when auth state changes (prevents leftover overlays after redirect signin)
   useEffect(() => {
     const handler = () => setRulesOpen(false);
     window.addEventListener('auth-changed', handler);
@@ -47,6 +55,15 @@ export default function AppHeader({ title }) {
             <span className="sk-header-title">{title || derivedTitle}</span>
           </IonTitle>
           <IonButtons slot="end">
+            {user && (
+              <IonButton
+                onClick={() => setWalletOpen(true)}
+                aria-label={t('coins.wallet_alert_header')}
+                className="sk-header-wallet-btn"
+              >
+                <CoinBalance amount={displayCoins} size="sm" className="sk-header-coins" />
+              </IonButton>
+            )}
             <IonButton
               onClick={toggleTheme}
               title={isDark ? t('menu.theme_light') : t('menu.theme_dark')}
@@ -71,6 +88,15 @@ export default function AppHeader({ title }) {
       </IonHeader>
 
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
+
+      <IonAlert
+        isOpen={walletOpen}
+        onDidDismiss={() => setWalletOpen(false)}
+        header={t('coins.wallet_alert_header')}
+        message={t('coins.wallet_alert_message', { amount: coins.toLocaleString() })}
+        cssClass="sk-wallet-alert"
+        buttons={[t('notifications.ok_button')]}
+      />
     </>
   );
 }
