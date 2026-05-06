@@ -62,12 +62,21 @@ export default function OnlineGamePage() {
     gridSize: data?.gridSize
   });
 
+  // Defer the "doc not found" redirect: a fresh-out-of-matchmaking navigation
+  // can briefly see the doc as missing if the local Firestore cache hasn't
+  // synced yet. Giving the snapshot listener a short grace period before
+  // bouncing avoids the false-negative without making genuine bad-URL hits
+  // hang forever. The "user is not a participant" check has no such race —
+  // once `data` is in hand, the UIDs are authoritative.
   useEffect(() => {
-    if (exists === false) history.replace('/online/lobby');
-    // If user is not a player in this game, go back to lobby
+    if (exists === false) {
+      const timer = setTimeout(() => history.replace('/online/lobby'), 3000);
+      return () => clearTimeout(timer);
+    }
     if (exists === true && data && myPlayerNumber === null) {
       history.replace('/online/lobby');
     }
+    return undefined;
   }, [exists, history, data, myPlayerNumber]);
 
   // Notify backend when player joins the game

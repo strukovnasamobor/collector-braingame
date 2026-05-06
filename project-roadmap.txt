@@ -1,4 +1,4 @@
-- fix standard matchmaking, short waiting to 5s
+- fix standard matchmaking, short waiting to 5s, reconnecting to active match
 
 - adding reinforcment learning on all AI tiers
 - vulnerabilities and exploits checks
