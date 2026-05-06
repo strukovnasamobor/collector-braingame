@@ -47,21 +47,8 @@ export default function OnlineGamePage() {
   } = useOnlineGame(id);
 
   const [alertError, setAlertError] = useState('');
-  const [opponentLeftOpen, setOpponentLeftOpen] = useState(false);
   const [coinRewardShown, setCoinRewardShown] = useState(false);
   const { registerExit, clearExit } = useGameExit();
-
-  useEffect(() => {
-    if (!finalResult) return;
-    console.log('[CoinReward debug]', {
-      finalResult,
-      myPlayerNumber,
-      source: data?.source,
-      mode: data?.mode,
-      coinDelta1: finalResult.coinDelta1,
-      coinDelta2: finalResult.coinDelta2,
-    });
-  }, [finalResult]);
 
   const watchPlayers = useMemo(
     () => (myPlayerNumber ? [myPlayerNumber] : []),
@@ -95,24 +82,6 @@ export default function OnlineGamePage() {
     };
     notifyJoin();
   }, [user, exists, id]);
-
-  useEffect(() => {
-    if (!data) return;
-    const opponentLeft =
-      data.status === 'left' &&
-      data.leftBy &&
-      myPlayerNumber != null &&
-      data.leftBy !== (myPlayerNumber === 1 ? data.player1uid : data.player2uid);
-
-    if (opponentLeft) {
-      const key =
-        data.mode === 'ranked'
-          ? 'notifications.opponent_left_no_rating_change'
-          : 'notifications.opponent_left';
-      setAlertError(t(key));
-      setOpponentLeftOpen(true);
-    }
-  }, [data, t, myPlayerNumber]);
 
   useEffect(() => {
     if (localError) setAlertError(t(localError));
@@ -174,6 +143,18 @@ export default function OnlineGamePage() {
     const { winner, timeout, loser, delta1, delta2, newR1, newR2, coinDelta1, coinDelta2 } = finalResult;
     const p1 = data.player1name;
     const p2 = data.player2name;
+
+    // Opponent-left detection. Ranked forfeits set status='finished' +
+    // result.forfeit; standard leaves set status='left' with no `winner`.
+    // In both cases `data.leftBy` is the leaver's UID. The leaver themselves
+    // never sees this panel — they navigate to the lobby in handleQuit before
+    // the snapshot lands — so any reader of this message is the stayer.
+    const myUid = myPlayerNumber === 1 ? data.player1uid : data.player2uid;
+    const opponentLeft = !!data.leftBy && data.leftBy !== myUid;
+    // Standard mode doesn't write a `winner` field on leave, so promote the
+    // stayer to winner for the purpose of rendering the headline.
+    const effectiveWinner = winner != null ? winner : (opponentLeft ? myPlayerNumber : null);
+
     const ratingLine =
       delta1 != null && delta2 != null ? (
         <>
@@ -200,6 +181,12 @@ export default function OnlineGamePage() {
           </span>
         </>
       ) : null;
+    const opponentLeftLine = opponentLeft ? (
+      <>
+        {t('game.opponent_left_reason')}
+        {'\n'}
+      </>
+    ) : null;
     if (timeout) {
       const loserName = loser === 1 ? p1 : p2;
       const winnerName = winner === 1 ? p1 : p2;
@@ -213,7 +200,7 @@ export default function OnlineGamePage() {
         </>
       );
     }
-    if (winner === 0) {
+    if (effectiveWinner === 0) {
       return (
         <>
           {t('game.game_over_draw')}
@@ -222,10 +209,12 @@ export default function OnlineGamePage() {
         </>
       );
     }
-    const winnerName = winner === 1 ? p1 : p2;
+    if (effectiveWinner == null) return null;
+    const winnerName = effectiveWinner === 1 ? p1 : p2;
     return (
       <>
-        {renderWinnerLine(winnerName, winner)}
+        {opponentLeftLine}
+        {renderWinnerLine(winnerName, effectiveWinner)}
         {ratingLine}
         {coinLine}
       </>
@@ -354,32 +343,13 @@ export default function OnlineGamePage() {
         />
 
         <IonAlert
-          isOpen={!!alertError && !opponentLeftOpen}
+          isOpen={!!alertError}
           onDidDismiss={() => {
             setAlertError('');
           }}
           header={t('app_title')}
           message={alertError}
           buttons={[t('notifications.ok_button')]}
-        />
-
-        <IonAlert
-          isOpen={opponentLeftOpen}
-          backdropDismiss={false}
-          onDidDismiss={() => {
-            setOpponentLeftOpen(false);
-            setAlertError('');
-          }}
-          header={t('app_title')}
-          message={alertError}
-          buttons={[
-            {
-              text: t('notifications.ok_button'),
-              handler: () => {
-                history.replace('/online/lobby');
-              }
-            }
-          ]}
         />
 
       </IonContent>

@@ -1172,7 +1172,7 @@ async function handleMatchmakingAction(env, authUser, body) {
     // they wait HUMAN_WAIT_MS before bots are eligible. Without this, /run
     // would always match the soloer to a bot before any second human had a
     // chance to enqueue.
-    const HUMAN_WAIT_MS = 10 * 1000;
+    const HUMAN_WAIT_MS = 5 * 1000;
     const selfWaitMs = nowMs - Number(self.joinedAtMs || nowMs);
     const botsConfigured =
       mode === 'standard'

@@ -29,10 +29,25 @@ export default function AppHeader({ title }) {
   const { isDark, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { coins } = useEconomy();
-  const displayCoins = useAnimatedCounter(coins);
   const location = useLocation();
   const [rulesOpen, setRulesOpen] = useState(false);
   const [walletOpen, setWalletOpen] = useState(false);
+  // While a CoinReward animation is in flight, hold the wallet at its
+  // pre-reward value. CoinReward dispatches 'coin-reward-lock' on mount and
+  // 'coin-reward-unlock' the moment the coins land.
+  const [pendingDelta, setPendingDelta] = useState(0);
+  useEffect(() => {
+    const onLock = (e) => setPendingDelta(Number(e.detail?.delta) || 0);
+    const onUnlock = () => setPendingDelta(0);
+    window.addEventListener('coin-reward-lock', onLock);
+    window.addEventListener('coin-reward-unlock', onUnlock);
+    return () => {
+      window.removeEventListener('coin-reward-lock', onLock);
+      window.removeEventListener('coin-reward-unlock', onUnlock);
+    };
+  }, []);
+  const targetCoins = Math.max(0, coins - pendingDelta);
+  const displayCoins = useAnimatedCounter(targetCoins);
 
   let derivedTitle = t('app_title');
   if (location.pathname.startsWith('/online')) {

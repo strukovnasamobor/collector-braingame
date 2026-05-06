@@ -105,6 +105,7 @@
     "must_eliminate_adjacent": "You must eliminate an adjacent cell!",
     "enter_both_names": "Please enter both player names!",
     "timeout_loss": "{player} lost due to inactivity (3 missed turns)!",
+    "opponent_left_reason": "Other player left the game",
     "rating_change": "Rating: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Leave the game?",
     "leaver_warning_message": "If you leave now, you will lose up to 100 coins and your opponent will receive coins for their current max connected group.",

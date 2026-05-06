@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
-import { playCoinSound } from '../utils/coinSound';
+import { playCoinTickerSound } from '../utils/coinSound';
 import './CoinReward.css';
+
+// Roughly the coin-flight window: t2 starts at 450 ms after mount, the
+// 1400 ms transit + 490 ms stagger means the last coin lands at ~1890 ms
+// after t2. 1500 ms of ticker covers the bulk of the visible flight.
+const FLIGHT_DURATION_MS = 1500;
 
 const COIN_COUNT = 8;
 
@@ -10,7 +15,9 @@ function rand(min, max) {
 
 export default function CoinReward({ amount, onDone }) {
   useEffect(() => {
-    playCoinSound();
+    // Tell AppHeader to freeze the wallet display at its pre-reward value while
+    // the coins are flying. Released in Phase 3 below, when coins land.
+    window.dispatchEvent(new CustomEvent('coin-reward-lock', { detail: { delta: amount } }));
 
     // Gold confetti burst using the same canvas-confetti already in the project
     import('canvas-confetti').then((mod) => {
@@ -35,13 +42,6 @@ export default function CoinReward({ amount, onDone }) {
     const wr = walletEl?.getBoundingClientRect();
     const walletX = wr && wr.width > 0 ? wr.left + wr.width / 2 : window.innerWidth - 200;
     const walletY = wr && wr.height > 0 ? wr.top + wr.height / 2 : 30;
-    console.log('[CoinReward] wallet target:', {
-      tag: walletEl?.tagName,
-      cls: walletEl?.className,
-      walletX,
-      walletY,
-      rect: wr
-    });
 
     // Coins start from screen centre (roughly where the game board is)
     const originX = window.innerWidth / 2;
@@ -71,8 +71,10 @@ export default function CoinReward({ amount, onDone }) {
       });
     });
 
-    // Phase 2 — fly straight toward the wallet (top-right) with stagger
+    // Phase 2 — fly straight toward the wallet (top-right) with stagger,
+    // and start the ticker chirps so the audio tracks the visible flight.
     const t2 = setTimeout(() => {
+      playCoinTickerSound(FLIGHT_DURATION_MS);
       coins.forEach((el, i) => {
         const delay = i * 70;
         el.style.transition =
@@ -87,8 +89,10 @@ export default function CoinReward({ amount, onDone }) {
       });
     }, 450);
 
-    // Phase 3 — wallet pulse when first coins arrive
+    // Phase 3 — coins land. Pulse the wallet AND release the lock so the
+    // header counter animates from the old amount up to the new one.
     const t3 = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('coin-reward-unlock'));
       if (walletEl) {
         walletEl.classList.add('sk-wallet-pulse');
         setTimeout(() => walletEl.classList.remove('sk-wallet-pulse'), 600);
@@ -102,6 +106,8 @@ export default function CoinReward({ amount, onDone }) {
     }, 4500);
 
     return () => {
+      // Safety: if we unmount mid-flight, make sure the wallet isn't left frozen.
+      window.dispatchEvent(new CustomEvent('coin-reward-unlock'));
       cancelAnimationFrame(raf);
       clearTimeout(t2);
       clearTimeout(t3);

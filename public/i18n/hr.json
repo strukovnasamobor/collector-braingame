@@ -105,6 +105,7 @@
     "must_eliminate_adjacent": "Morate osjenčati susjednu ćeliju!",
     "enter_both_names": "Molimo unesite oba imena igrača!",
     "timeout_loss": "{player} je izgubio zbog neaktivnosti (3 propuštena poteza)!",
+    "opponent_left_reason": "Drugi igrač je napustio igru",
     "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Napustiti igru?",
     "leaver_warning_message": "Ako sada izađete, izgubit ćete do 100 zlatnika, a protivnik će dobiti zlatnike za trenutnu najveću grupu.",

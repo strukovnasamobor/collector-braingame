@@ -1,7 +1,4 @@
-? add text on game end how many coins is earned (like for confetti) add show earned coins like confetti, make sound and animate it them going to wallet and then wallet adds up
-? human vs human matchmaking after optimization and human vs bot
-? sometimes when elimating cell is rejacted and dot appears
-
+- fix standard matchmaking, short waiting to 5s
 
 - adding reinforcment learning on all AI tiers
 - vulnerabilities and exploits checks
