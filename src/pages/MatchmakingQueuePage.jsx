@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useHistory, useLocation, useParams } from 'react-router-dom';
 import {
     IonPage,
@@ -77,24 +77,38 @@ export default function MatchmakingQueuePage() {
         let unsubscribe = () => { };
         let retryTimer = null;
         let heartbeatTimer = null;
-        // Precise one-shot retry scheduled at joinedAtMs + HUMAN_WAIT_MS_CLIENT
-        // + buffer. Saves ~2s on the solo-bot path vs. waiting the generic 5s
-        // armTimers retry — without it the second /run only fires after the
-        // first 5s setInterval tick, which lands 2-3s past the worker's
-        // bot-eligibility threshold.
+        // Precise one-shot retry scheduled from the worker's `retryAfterMs`
+        // hint when /run returns null because bots aren't yet eligible. The
+        // worker computes the remaining wait against its own joinedAtMs, so
+        // this lands right at the threshold without client/worker clock
+        // skew or enqueue-overhead guesswork.
         let preciseRetryTimer = null;
         let lastRedirectedGameId = null;
         let queueWasPresent = false;
         let reEnqueuing = false;
 
+        const schedulePreciseRetry = (delayMs) => {
+            if (!active) return;
+            if (preciseRetryTimer) window.clearTimeout(preciseRetryTimer);
+            preciseRetryTimer = window.setTimeout(() => {
+                preciseRetryTimer = null;
+                if (!active) return;
+                void attemptMatch();
+            }, Math.max(0, delayMs));
+        };
+
         const attemptMatch = async () => {
             if (trying) return;
             trying = true;
             try {
-                const gameId = await tryFindMatch({ userId: user.uid, mode: safeMode });
-                if (active && gameId) {
-                    const ok = await validateGame({ gameId });
-                    if (ok) history.replace(`/online/game/${gameId}`);
+                const result = await tryFindMatch({ userId: user.uid, mode: safeMode });
+                if (active && result.gameId) {
+                    const ok = await validateGame({ gameId: result.gameId });
+                    if (ok) history.replace(`/online/game/${result.gameId}`);
+                } else if (active && result.retryAfterMs > 0) {
+                    // Worker told us exactly when bots become eligible. Use
+                    // that instead of the generic 5s armTimers retry.
+                    schedulePreciseRetry(result.retryAfterMs);
                 }
             } catch (_) {
                 // Keep searching; transient failures (incl. 429s) shouldn't stop retries.
@@ -169,7 +183,6 @@ export default function MatchmakingQueuePage() {
                 await cancelMatchmaking(user.uid, safeMode);
 
                 const isRanked = safeMode === 'ranked';
-                const enqueueAt = Date.now();
                 await enqueueForMatch({
                     user,
                     mode: safeMode,
@@ -206,26 +219,12 @@ export default function MatchmakingQueuePage() {
                     }
                 });
 
+                // attemptMatch handles its own precise-retry scheduling via the
+                // worker's `retryAfterMs` response, so there's nothing else to
+                // schedule here — armTimers' 5s ticks are the safety net for
+                // any case the precise retry doesn't cover (e.g. tab visibility
+                // pauses).
                 await attemptMatch();
-
-                // First /run usually returns null because selfWaitMs is below the
-                // worker's HUMAN_WAIT_MS threshold. Schedule a precise one-shot
-                // retry at exactly that threshold (plus a small buffer for clock
-                // skew) so solo-bot match lands at ~T+3.3s instead of waiting the
-                // generic 5s armTimers tick (which would be ~T+7s). Mirrors
-                // worker/src/index.js HUMAN_WAIT_MS — keep these in sync.
-                const HUMAN_WAIT_MS_CLIENT = 3000;
-                const PRECISE_RETRY_BUFFER_MS = 300;
-                const elapsedSinceEnqueue = Date.now() - enqueueAt;
-                const preciseDelayMs = Math.max(
-                    0,
-                    HUMAN_WAIT_MS_CLIENT - elapsedSinceEnqueue + PRECISE_RETRY_BUFFER_MS
-                );
-                preciseRetryTimer = window.setTimeout(() => {
-                    preciseRetryTimer = null;
-                    if (!active) return;
-                    void attemptMatch();
-                }, preciseDelayMs);
 
                 if (document.visibilityState === 'visible') armTimers();
                 document.addEventListener('visibilitychange', onVisibility);
@@ -285,7 +284,12 @@ export default function MatchmakingQueuePage() {
     }, [user, cancelling, safeMode, history]);
 
     const { registerExit, clearExit } = useGameExit();
-    useEffect(() => {
+    // useLayoutEffect runs synchronously after commit, before paint — so the exit
+    // config is registered before the user can possibly tap the online tab. With a
+    // regular useEffect there's a window where exitConfigs['/online'] is missing
+    // and TabBar would fall back to a generic alert (or, before the TabBar fix,
+    // silently navigate to the lobby).
+    useLayoutEffect(() => {
         registerExit({
             tabRoot: '/online',
             title: t('lobby.stop_search_title'),

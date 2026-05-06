@@ -705,6 +705,38 @@ async function deleteDocument(env, collectionName, id) {
   return { ok: true };
 }
 
+// All-or-nothing multi-document write. Each entry in `writes` is
+// {collectionName, id, data, updateTime?}. If any precondition fails
+// (updateTime mismatch on any doc), the entire commit is rejected and no
+// document is modified — the caller must rollback / retry. Used in
+// matchmaking to bundle the self + candidate queue updates so a concurrent
+// /run racing for the same candidate can't leave one side stranded.
+async function commitAtomicWrites(env, writes) {
+  const body = {
+    writes: writes.map((w) => {
+      const writeOp = {
+        update: {
+          name: `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/${w.collectionName}/${w.id}`,
+          fields: firestoreFieldsFromObject(w.data)
+        }
+      };
+      if (w.updateTime) {
+        writeOp.currentDocument = { updateTime: w.updateTime };
+      }
+      return writeOp;
+    })
+  };
+  const response = await firestoreFetch(env, ':commit', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Atomic commit failed: ${response.status} ${errorText}`);
+  }
+  return response.json();
+}
+
 async function mergePlayerWithRetry(env, uid, mutate, { maxAttempts = 4 } = {}) {
   let lastError;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -1172,7 +1204,7 @@ async function handleMatchmakingAction(env, authUser, body) {
     // they wait HUMAN_WAIT_MS before bots are eligible. Without this, /run
     // would always match the soloer to a bot before any second human had a
     // chance to enqueue.
-    const HUMAN_WAIT_MS = 3 * 1000;
+    const HUMAN_WAIT_MS = 5 * 1000;
     const selfWaitMs = nowMs - Number(self.joinedAtMs || nowMs);
     const botsConfigured =
       mode === 'standard'
@@ -1223,7 +1255,17 @@ async function handleMatchmakingAction(env, authUser, body) {
     const selfDisplayRating = Number(self.rating || DEFAULT_DISPLAY_RATING);
 
     const N = liveCandidates.length;
-    if (!N) return corsResponse({ ok: true, gameId: null });
+    if (!N) {
+      // Tell the client exactly when bots become eligible so it can schedule
+      // its precise retry instead of guessing. Only meaningful when bots
+      // are configured for this grid/timer combo and we're still inside the
+      // wait window — otherwise nothing the client can do but keep polling.
+      const retryAfterMs =
+        botsConfigured && selfWaitMs < HUMAN_WAIT_MS
+          ? HUMAN_WAIT_MS - selfWaitMs + 200
+          : 0;
+      return corsResponse({ ok: true, gameId: null, retryAfterMs });
+    }
 
     // Standard mode: pick uniformly at random — ratings are not updated in
     // Standard, so proximity has no meaning. Ranked mode: sample a random pool
@@ -1372,27 +1414,60 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     // Update queue rows + spin up MatchBot DO. Failure rolls the game back.
     try {
-      await writeDocument(env, queueCollection, authUser.uid, {
-        ...liveSelf.data,
-        status: 'matched',
-        gameId,
-        matchedWith: candidateUid,
-        matchedAt: new Date().toISOString(),
-        updatedAtMs: Date.now(),
-        updatedAt: new Date().toISOString()
-      }, liveSelf.updateTime);
+      const matchedAt = new Date().toISOString();
+      const updatedAtMs = Date.now();
+      const updatedAt = new Date().toISOString();
 
-      if (!candidateIsBot) {
-        // Bots have no Firestore queue doc — nothing to update on the bot side.
-        await writeDocument(env, queueCollection, chosen.candidate.id, {
-          ...liveCandidate,
+      if (candidateIsBot) {
+        // Bots have no Firestore queue doc — single self write is sufficient.
+        await writeDocument(env, queueCollection, authUser.uid, {
+          ...liveSelf.data,
           status: 'matched',
           gameId,
-          matchedWith: authUser.uid,
-          matchedAt: new Date().toISOString(),
-          updatedAtMs: Date.now(),
-          updatedAt: new Date().toISOString()
-        }, candidateQueue.updateTime);
+          matchedWith: candidateUid,
+          matchedAt,
+          updatedAtMs,
+          updatedAt
+        }, liveSelf.updateTime);
+      } else {
+        // Atomic dual-update: self + candidate queues both flip to 'matched'
+        // referencing the same gameId, or neither does. Without this, two
+        // concurrent /runs racing for the same human candidate (e.g. A picks
+        // B, B picks bot1) could each succeed at updating their own self
+        // queue but only one would win the precondition on the candidate —
+        // leaving the loser pointing at a now-cancelled game with no path
+        // back to 'searching'. Atomic commit fails preconditions all-or-
+        // nothing, so the catch below sees both queues untouched.
+        await commitAtomicWrites(env, [
+          {
+            collectionName: queueCollection,
+            id: authUser.uid,
+            data: {
+              ...liveSelf.data,
+              status: 'matched',
+              gameId,
+              matchedWith: candidateUid,
+              matchedAt,
+              updatedAtMs,
+              updatedAt
+            },
+            updateTime: liveSelf.updateTime
+          },
+          {
+            collectionName: queueCollection,
+            id: chosen.candidate.id,
+            data: {
+              ...liveCandidate,
+              status: 'matched',
+              gameId,
+              matchedWith: authUser.uid,
+              matchedAt,
+              updatedAtMs,
+              updatedAt
+            },
+            updateTime: candidateQueue.updateTime
+          }
+        ]);
       }
 
       // Set state=playing for the human (and the candidate human if any).
@@ -1442,6 +1517,30 @@ async function handleMatchmakingAction(env, authUser, body) {
           { updateMask: ['status', 'cancelledReason', 'cancelledAt'] }
         );
       } catch (e) {}
+      // If the queue writes succeeded earlier (atomic commit landed) but a
+      // later step failed (e.g., setPlayerState exhausted retries), the
+      // queue docs are still pointing at the now-cancelled game. Reset any
+      // queue still pointing at this gameId back to 'searching' so neither
+      // client is stuck on a dead match.
+      const resetIfPointingAtThisGame = async (uid) => {
+        try {
+          const cur = await getDocument(env, queueCollection, uid);
+          if (cur?.data?.gameId === gameId) {
+            await writeDocument(env, queueCollection, uid, {
+              ...cur.data,
+              status: 'searching',
+              gameId: null,
+              matchedWith: null,
+              updatedAtMs: Date.now(),
+              updatedAt: new Date().toISOString()
+            }, cur.updateTime);
+          }
+        } catch (_) {}
+      };
+      await resetIfPointingAtThisGame(authUser.uid);
+      if (!candidateIsBot) {
+        await resetIfPointingAtThisGame(chosen.candidate.id);
+      }
       return corsResponse({ ok: true, gameId: null });
     }
   }
@@ -2148,17 +2247,31 @@ function pickAllowedOrigin(origin) {
   }
 }
 
-// Optional Cloudflare Rate Limiting binding. If unbound (e.g., local dev or older deploys),
-// the call is a no-op and returns true. Keys are uid:pathname so each endpoint has its own
-// budget per user; legitimate play stays well under the limit.
+// Cloudflare Rate Limiting binding. Keys are uid:pathname so each endpoint has its own
+// budget per user; legitimate play stays well under the limit. In production, a missing
+// or broken binding fails CLOSED — better to 429 legitimate traffic than burn the Firestore
+// budget if the limiter is silently disabled. In dev/preview the call is a no-op.
+let rateLimiterMissingLogged = false;
+let rateLimiterErrorLogged = false;
 async function checkRateLimit(env, key) {
   const limiter = env?.RATE_LIMITER;
-  if (!limiter || typeof limiter.limit !== 'function') return true;
+  const isProd = env?.ENVIRONMENT === 'production';
+  if (!limiter || typeof limiter.limit !== 'function') {
+    if (!rateLimiterMissingLogged) {
+      console.error('[checkRateLimit] RATE_LIMITER binding missing or malformed — rate limiting is OFF');
+      rateLimiterMissingLogged = true;
+    }
+    return !isProd;
+  }
   try {
     const { success } = await limiter.limit({ key });
     return !!success;
-  } catch (_) {
-    return true;
+  } catch (err) {
+    if (!rateLimiterErrorLogged) {
+      console.error('[checkRateLimit] limiter.limit threw — failing', isProd ? 'closed' : 'open', err?.message);
+      rateLimiterErrorLogged = true;
+    }
+    return !isProd;
   }
 }
 

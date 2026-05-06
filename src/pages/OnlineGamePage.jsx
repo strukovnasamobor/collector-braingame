@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useMemo, useCallback } from 'react';
 import { useHistory, useParams } from 'react-router-dom';
 import {
   IonPage,
@@ -120,20 +120,29 @@ export default function OnlineGamePage() {
     leaveGame().catch(() => {});
   }, [leaveGame, history]);
 
-  useEffect(() => {
-    const isMatchmade = data?.source === 'matchmaking';
-    const showLeaverWarning = !finalResult && data?.status === 'active' && isMatchmade;
+  // Narrow deps to the fields the exit config actually uses so Firestore snapshots
+  // (heartbeats every 10s, every move) don't churn the config and open a window
+  // where exitConfigs['/online'] is briefly missing while the user taps the tab.
+  const dataSource = data?.source;
+  const dataStatus = data?.status;
+  const dataMode = data?.mode;
+  // useLayoutEffect runs synchronously after commit, before the browser paints —
+  // eliminates the initial-mount race where the user could see the page and tap
+  // the online tab before the regular useEffect had a chance to register.
+  useLayoutEffect(() => {
+    const isMatchmade = dataSource === 'matchmaking';
+    const showLeaverWarning = !finalResult && dataStatus === 'active' && isMatchmade;
     registerExit({
       tabRoot: '/online',
       silent: !!finalResult,
       title: showLeaverWarning ? t('game.leaver_warning_title') : undefined,
       message: showLeaverWarning
-        ? t(data?.mode === 'ranked' ? 'game.leaver_warning_message_ranked' : 'game.leaver_warning_message')
+        ? t(dataMode === 'ranked' ? 'game.leaver_warning_message_ranked' : 'game.leaver_warning_message')
         : undefined,
       onConfirm: handleQuit
     });
     return () => clearExit('/online');
-  }, [registerExit, clearExit, handleQuit, finalResult, data, t]);
+  }, [registerExit, clearExit, handleQuit, finalResult, dataSource, dataStatus, dataMode, t]);
 
   const renderWinnerLine = (winnerName, winnerNumber) => {
     const winnerColor = winnerNumber === 1 ? '#dc3545' : '#007bff';

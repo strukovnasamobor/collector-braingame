@@ -39,6 +39,15 @@ export default function TabBar() {
   const offlineTarget = localGameConfig ? '/offline/game' : '/offline';
   const onlineTarget = lastOnlineUrl;
 
+  // Routes that represent active engagement (mid-game, in matchmaking queue) and
+  // must always confirm before navigating away — even if the page hasn't yet had a
+  // chance to register its exit config (initial-mount race, transient unmount, etc).
+  // Without this, a tab tap during the registration window silently navigates the
+  // user out of their game with no warning.
+  const ACTIVE_ENGAGEMENT_PREFIXES = ['/online/game/', '/online/matchmaking/'];
+  const isActiveEngagementRoute = (pathname) =>
+    ACTIVE_ENGAGEMENT_PREFIXES.some((p) => pathname.startsWith(p));
+
   const handleTabClick = (e, tabRoot) => {
     if (!isOnTab(tabRoot)) return; // different tab — let normal routing happen
     e.preventDefault();
@@ -55,6 +64,17 @@ export default function TabBar() {
       return;
     }
     const mainMenu = TAB_MAIN_MENU[tabRoot];
+    if (mainMenu && isActiveEngagementRoute(location.pathname)) {
+      // Defensive default: no exit config registered but the URL says we're
+      // mid-game / mid-matchmaking. Show the default quit alert instead of
+      // silently navigating — the page's own registerExit will replace this
+      // with the customised title/message on the next render.
+      setPendingExit({
+        tabRoot,
+        onConfirm: () => history.replace(mainMenu)
+      });
+      return;
+    }
     if (mainMenu && location.pathname !== mainMenu) {
       // Secondary page on this tab — go back to its main menu.
       history.replace(mainMenu);

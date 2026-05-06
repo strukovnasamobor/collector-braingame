@@ -1,7 +1,5 @@
-- fix standard matchmaking, short waiting to 5s
-
+- test standard and ranked matchmaking
 - new AI tier - Collector Assimilator
-- vulnerabilities and exploits checks
 
 Ver. 1.0.0 (1)
 - change production flags: firebase.js, vite.config.js
@@ -16,10 +14,10 @@ OFFLINE AND ONLINE AI TIERS
 2. Hoarder - Gomilatelj     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 3. Collector - Sakupljač    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 - Only in online games:
-    4. Assimilator           { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+4. Assimilator - Asimilator { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
                             + opening book + MAST table + feature-weight learning
-    *** Upgrade ***
-    5. Alpha                 { kind: 'alphazero' } + learning
+*** Upgrade ***
+5. AlphaCollector           { kind: 'alphazero' } + learning
 
 12 x 12 BOARD
 #	Word		    P	B	C/B	T

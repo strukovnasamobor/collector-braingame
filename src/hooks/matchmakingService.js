@@ -22,7 +22,10 @@ export function listenForMatch(userId, mode, onChange) {
 
 export async function tryFindMatch({ userId, mode }) {
     const result = await runMatchmakerCall({ mode, userId });
-    return result?.data?.gameId || null;
+    return {
+        gameId: result?.data?.gameId || null,
+        retryAfterMs: Number(result?.data?.retryAfterMs) || 0
+    };
 }
 
 export async function validateGame({ gameId }) {
