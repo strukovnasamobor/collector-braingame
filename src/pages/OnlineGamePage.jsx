@@ -130,8 +130,14 @@ export default function OnlineGamePage() {
   // eliminates the initial-mount race where the user could see the page and tap
   // the online tab before the regular useEffect had a chance to register.
   useLayoutEffect(() => {
-    const isMatchmade = dataSource === 'matchmaking';
-    const showLeaverWarning = !finalResult && dataStatus === 'active' && isMatchmade;
+    // Default to the matchmade leaver warning until data conclusively says
+    // otherwise (private room, finished game). Standard matchmade is the most
+    // common case for /online/game/*, and it carries a -100 BGC penalty —
+    // better to over-warn during the loading window than to show a generic
+    // "Quit game" alert that doesn't surface the cost.
+    const isPrivateRoom = dataSource === 'room';
+    const isFinished = !!finalResult || dataStatus === 'finished' || dataStatus === 'left' || dataStatus === 'cancelled';
+    const showLeaverWarning = !isFinished && !isPrivateRoom;
     registerExit({
       tabRoot: '/online',
       silent: !!finalResult,

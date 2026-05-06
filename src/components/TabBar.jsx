@@ -39,11 +39,12 @@ export default function TabBar() {
   const offlineTarget = localGameConfig ? '/offline/game' : '/offline';
   const onlineTarget = lastOnlineUrl;
 
-  // Routes that represent active engagement (mid-game, in matchmaking queue) and
-  // must always confirm before navigating away — even if the page hasn't yet had a
-  // chance to register its exit config (initial-mount race, transient unmount, etc).
-  // Without this, a tab tap during the registration window silently navigates the
-  // user out of their game with no warning.
+  // URLs where the user is mid-game / mid-matchmaking. The page itself owns the
+  // exit config (with the correct leaveGame handler that triggers the server-side
+  // coin penalty); if for any reason no config is registered, we must NOT navigate
+  // away — a bare history.replace would skip /game/leave and the server would only
+  // apply the penalty later via the cron sweep. Better to no-op the tap and wait
+  // for the page's useLayoutEffect to register; the user can tap again.
   const ACTIVE_ENGAGEMENT_PREFIXES = ['/online/game/', '/online/matchmaking/'];
   const isActiveEngagementRoute = (pathname) =>
     ACTIVE_ENGAGEMENT_PREFIXES.some((p) => pathname.startsWith(p));
@@ -63,20 +64,17 @@ export default function TabBar() {
       setPendingExit(cfg);
       return;
     }
-    const mainMenu = TAB_MAIN_MENU[tabRoot];
-    if (mainMenu && isActiveEngagementRoute(location.pathname)) {
-      // Defensive default: no exit config registered but the URL says we're
-      // mid-game / mid-matchmaking. Show the default quit alert instead of
-      // silently navigating — the page's own registerExit will replace this
-      // with the customised title/message on the next render.
-      setPendingExit({
-        tabRoot,
-        onConfirm: () => history.replace(mainMenu)
-      });
+    if (isActiveEngagementRoute(location.pathname)) {
+      // No cfg yet but the URL says the user is mid-game/queue. Swallow the tap
+      // rather than fall through to a bare history.replace — the proper leave
+      // handler is owned by the page and we mustn't bypass it. The page's
+      // useLayoutEffect will have a config registered by the next render.
       return;
     }
+    const mainMenu = TAB_MAIN_MENU[tabRoot];
     if (mainMenu && location.pathname !== mainMenu) {
-      // Secondary page on this tab — go back to its main menu.
+      // Secondary page on this tab (auth, join form, waiting room, etc) — no
+      // active game state, safe to send the user to the main menu without confirm.
       history.replace(mainMenu);
     }
   };
