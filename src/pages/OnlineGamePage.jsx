@@ -62,22 +62,19 @@ export default function OnlineGamePage() {
     gridSize: data?.gridSize
   });
 
-  // Defer the "doc not found" redirect: a fresh-out-of-matchmaking navigation
-  // can briefly see the doc as missing if the local Firestore cache hasn't
-  // synced yet. Giving the snapshot listener a short grace period before
-  // bouncing avoids the false-negative without making genuine bad-URL hits
-  // hang forever. The "user is not a participant" check has no such race —
-  // once `data` is in hand, the UIDs are authoritative.
+  // Only redirect when we have authoritative data, a known user, and the
+  // user genuinely isn't a participant. `user` can be transiently null while
+  // Firebase refreshes the auth state — gating on `user` here prevents that
+  // from looking like "you aren't in this game" and bouncing you mid-match.
+  // We deliberately do NOT bounce on `exists === false`: the local Firestore
+  // cache can briefly report a freshly-created doc as missing, and a bad URL
+  // just sits on the loading spinner instead.
   useEffect(() => {
-    if (exists === false) {
-      const timer = setTimeout(() => history.replace('/online/lobby'), 3000);
-      return () => clearTimeout(timer);
-    }
+    if (!user) return;
     if (exists === true && data && myPlayerNumber === null) {
       history.replace('/online/lobby');
     }
-    return undefined;
-  }, [exists, history, data, myPlayerNumber]);
+  }, [exists, history, data, myPlayerNumber, user]);
 
   // Notify backend when player joins the game
   useEffect(() => {

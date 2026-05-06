@@ -32,9 +32,18 @@ export default function MatchmakingQueuePage() {
     const { user, loading } = useAuth();
     const history = useHistory();
     const { mode } = useParams();
+    const location = useLocation();
     const query = useQuery();
     const [error, setError] = useState('');
     const [cancelling, setCancelling] = useState(false);
+
+    // Ionic's IonRouterOutlet keeps this component mounted in the background
+    // after navigating to the game page, so `useLocation` here tracks the
+    // *current* URL (e.g. /online/game/...) rather than this route. Effects
+    // that read URL state must gate on actually being on the matchmaking
+    // route — otherwise a stale "missing gridSize" check would bounce the
+    // user out of the just-started game.
+    const onMatchmakingRoute = location.pathname.startsWith('/online/matchmaking/');
 
     const safeMode = useMemo(
         () => (mode === 'ranked' || mode === 'standard' ? mode : 'standard'),
@@ -53,10 +62,11 @@ export default function MatchmakingQueuePage() {
     }, [loading, user, history]);
 
     useEffect(() => {
+        if (!onMatchmakingRoute) return;
         if (safeMode === 'standard' && standardGridSize == null) {
             history.replace('/online/lobby');
         }
-    }, [safeMode, standardGridSize, history]);
+    }, [onMatchmakingRoute, safeMode, standardGridSize, history]);
 
     useEffect(() => {
         if (!user) return undefined;
@@ -67,6 +77,12 @@ export default function MatchmakingQueuePage() {
         let unsubscribe = () => { };
         let retryTimer = null;
         let heartbeatTimer = null;
+        // Precise one-shot retry scheduled at joinedAtMs + HUMAN_WAIT_MS_CLIENT
+        // + buffer. Saves ~2s on the solo-bot path vs. waiting the generic 5s
+        // armTimers retry — without it the second /run only fires after the
+        // first 5s setInterval tick, which lands 2-3s past the worker's
+        // bot-eligibility threshold.
+        let preciseRetryTimer = null;
         let lastRedirectedGameId = null;
         let queueWasPresent = false;
         let reEnqueuing = false;
@@ -153,6 +169,7 @@ export default function MatchmakingQueuePage() {
                 await cancelMatchmaking(user.uid, safeMode);
 
                 const isRanked = safeMode === 'ranked';
+                const enqueueAt = Date.now();
                 await enqueueForMatch({
                     user,
                     mode: safeMode,
@@ -191,6 +208,25 @@ export default function MatchmakingQueuePage() {
 
                 await attemptMatch();
 
+                // First /run usually returns null because selfWaitMs is below the
+                // worker's HUMAN_WAIT_MS threshold. Schedule a precise one-shot
+                // retry at exactly that threshold (plus a small buffer for clock
+                // skew) so solo-bot match lands at ~T+3.3s instead of waiting the
+                // generic 5s armTimers tick (which would be ~T+7s). Mirrors
+                // worker/src/index.js HUMAN_WAIT_MS — keep these in sync.
+                const HUMAN_WAIT_MS_CLIENT = 3000;
+                const PRECISE_RETRY_BUFFER_MS = 300;
+                const elapsedSinceEnqueue = Date.now() - enqueueAt;
+                const preciseDelayMs = Math.max(
+                    0,
+                    HUMAN_WAIT_MS_CLIENT - elapsedSinceEnqueue + PRECISE_RETRY_BUFFER_MS
+                );
+                preciseRetryTimer = window.setTimeout(() => {
+                    preciseRetryTimer = null;
+                    if (!active) return;
+                    void attemptMatch();
+                }, preciseDelayMs);
+
                 if (document.visibilityState === 'visible') armTimers();
                 document.addEventListener('visibilitychange', onVisibility);
             } catch (e) {
@@ -216,6 +252,10 @@ export default function MatchmakingQueuePage() {
             document.removeEventListener('visibilitychange', onVisibility);
             unsubscribe();
             disarmTimers();
+            if (preciseRetryTimer) {
+                window.clearTimeout(preciseRetryTimer);
+                preciseRetryTimer = null;
+            }
             // Best-effort: tear down the queue entry server-side so a remount
             // (StrictMode / route churn / bfcache) starts from a clean slate.
             // Server is authoritative; we don't await.
