@@ -13,7 +13,7 @@ export default defineConfig({
         name: 'Collector BrainGame',
         short_name: 'Collector BG',
         theme_color: '#000000',
-        background_color: '#000000',
+        background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
