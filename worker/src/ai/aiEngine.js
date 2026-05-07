@@ -20,6 +20,12 @@ import {
   PW_ALPHA,
   WIN_MAG
 } from './aiTiers';
+import { buildBookKey, lookupBook } from './assimilator/openingBook';
+import { mastMultiplier } from './assimilator/mast';
+
+// Engine ignores learned weights below this threshold; falls back to the
+// hand-tuned defaults from heavyWeight. Mirrors learn.js's MIN_TRAINED_GAMES.
+const ASSIMILATOR_MIN_TRAINED_GAMES = 100;
 
 const PLACE = 0;
 const ELIMINATE = 1;
@@ -733,18 +739,57 @@ function defenseHeavyWeight(idx, ph, who) {
   return Math.max(0.1, 1 + 2 * oppAdj - 4 * ownAdj);
 }
 
+// Assimilator: structurally identical to heavyWeight but the place-phase
+// own/opp coefficients are learned (loaded from
+// cfg.assimilatorState.policyWeights). Eliminate phase keeps the same hand-
+// tuned formula as heavyWeight — per-game ingestion only stores placements,
+// so we never have BT training signal for elim moves.
+function makeAssimilatorHeavyWeight(ownCoef, oppCoef) {
+  return function assimilatorHeavyWeight(idx, ph, who) {
+    const opp = who === 1 ? 2 : 1;
+    if (ph === PLACE) {
+      const ownAdj = countAdjacentDots(idx, who);
+      const oppAdj = countAdjacentDots(idx, opp);
+      const deadAdj = countAdjacentDead(idx);
+      return Math.max(0.1, 1 + ownCoef * ownAdj + oppCoef * oppAdj - 2 * deadAdj);
+    }
+    const ownAdj = countAdjacentDots(idx, who);
+    const oppAdj = countAdjacentDots(idx, opp);
+    return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
+  };
+}
+
 // Weighted random pick from `arr` of length `n`, weights via the dispatched
 // policy function (heavyWeight | collectHeavyWeight | attackHeavyWeight).
 // Under light policy (cfg.policy === 'light'), falls back to uniform random.
+// Assimilator (mastBlendActive=true) multiplies each candidate's policy weight
+// by mastMultiplier(...) ∈ ~[0.5, 1.5] using the cross-game MAST table.
 function pickWeighted(arr, n, ph, who) {
   if (lightPolicyEff) return arr[Math.floor(Math.random() * n)];
   const w = weightFnEff;
+  if (!mastBlendActive) {
+    let total = 0;
+    for (let i = 0; i < n; i++) total += w(arr[i], ph, who);
+    let r = Math.random() * total;
+    for (let i = 0; i < n; i++) {
+      const wi = w(arr[i], ph, who);
+      r -= wi;
+      if (r <= 0) return arr[i];
+    }
+    return arr[n - 1];
+  }
+  // Assimilator MAST-blended path.
   let total = 0;
-  for (let i = 0; i < n; i++) total += w(arr[i], ph, who);
+  for (let i = 0; i < n; i++) {
+    const base = w(arr[i], ph, who);
+    const factor = mastMultiplier(assimilatorMastForSize, who, ph, arr[i]);
+    total += base * factor;
+  }
   let r = Math.random() * total;
   for (let i = 0; i < n; i++) {
-    const wi = w(arr[i], ph, who);
-    r -= wi;
+    const base = w(arr[i], ph, who);
+    const factor = mastMultiplier(assimilatorMastForSize, who, ph, arr[i]);
+    r -= base * factor;
     if (r <= 0) return arr[i];
   }
   return arr[n - 1];
@@ -905,8 +950,16 @@ function ensureUntried(node) {
     return;
   }
   // sort buf[0..n] by dispatched policy DESC (uses shared scoreBuf as scratch)
-  for (let i = 0; i < n; i++) {
-    scoreBuf[i] = Math.round(weightFnEff(buf[i], node.phase, node.toMove) * 1000) | 0;
+  if (mastBlendActive) {
+    for (let i = 0; i < n; i++) {
+      const base = weightFnEff(buf[i], node.phase, node.toMove);
+      const factor = mastMultiplier(assimilatorMastForSize, node.toMove, node.phase, buf[i]);
+      scoreBuf[i] = Math.round(base * factor * 1000) | 0;
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      scoreBuf[i] = Math.round(weightFnEff(buf[i], node.phase, node.toMove) * 1000) | 0;
+    }
   }
   for (let i = 1; i < n; i++) {
     const m = buf[i], s = scoreBuf[i];
@@ -940,6 +993,13 @@ let lightPolicyEff = false;
 // Active weight function for non-light policies. Dispatched per-call from
 // cfg.policy ∈ {'heavy' (default), 'collectHeavy', 'attackHeavy'}.
 let weightFnEff = heavyWeight;
+
+// Assimilator-tier per-search state. Set in runMCTSRave when the worker
+// passes cfg.assimilatorState; null otherwise. The MAST blend in pickWeighted
+// / ensureUntried is gated on `mastBlendActive` so non-Assimilator searches
+// keep the original fast path with no extra per-move multiplications.
+let assimilatorMastForSize = null;
+let mastBlendActive = false;
 
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
 let amafScore = null;
@@ -1164,6 +1224,30 @@ async function runMCTSRave(cfg) {
   else if (cfg.policy === 'DefenseHeavy') weightFnEff = defenseHeavyWeight;
   else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
 
+  // Assimilator hookup. Only takes effect when the worker injected
+  // cfg.assimilatorState (via chooseAIMove). Non-Assimilator searches leave
+  // these globals at null/false so all the existing fast paths run unchanged.
+  assimilatorMastForSize = null;
+  mastBlendActive = false;
+  if (cfg.tier === 'assimilator' && cfg.assimilatorState) {
+    const ast = cfg.assimilatorState;
+    if (ast.policyWeights
+        && Number.isFinite(Number(ast.policyWeights.ownCoef))
+        && Number.isFinite(Number(ast.policyWeights.oppCoef))
+        && (Number(ast.policyWeightsTrainedOnGames) || 0) >= ASSIMILATOR_MIN_TRAINED_GAMES) {
+      weightFnEff = makeAssimilatorHeavyWeight(
+        Number(ast.policyWeights.ownCoef),
+        Number(ast.policyWeights.oppCoef)
+      );
+    }
+    const sizeKey = String(size);
+    const mastBucket = ast.mast && ast.mast[sizeKey] ? ast.mast[sizeKey] : null;
+    if (mastBucket && Object.keys(mastBucket).length > 0) {
+      assimilatorMastForSize = mastBucket;
+      mastBlendActive = true;
+    }
+  }
+
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
   // is set and we have a saved snapshot from the previous call.
   let root = null;
@@ -1262,6 +1346,16 @@ function countEmpty() {
   return n;
 }
 
+// Total placements made so far (both sides). Eliminations don't change cells —
+// they only flip the dead bitmap on previously-empty squares — so cells > 0
+// is a clean count of placements. Used to gate the Assimilator opening book
+// (book entries only apply to the first OPENING_BOOK_MAX_PLACEMENTS plies).
+function countPlacements() {
+  let n = 0;
+  for (let i = 0; i < N2; i++) if (cells[i] !== 0) n++;
+  return n;
+}
+
 async function chooseMove(cfg) {
   // Set the eval pointer for tiers that use one
   currentEval = EVAL_BY_NAME[cfg.evalName] || evalBasic;
@@ -1285,6 +1379,32 @@ async function chooseMove(cfg) {
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {
+    // Assimilator opening-book hit: short-circuit MCTS entirely for early-game
+    // place phase if we have a high-confidence cached move. The book key
+    // ignores the `dead` bitmap (see openingBook.js), so we re-validate that
+    // the cached move is still legal in the exact current position before
+    // returning it.
+    if (cfg.tier === 'assimilator' && cfg.assimilatorState && phase === PLACE) {
+      const ast = cfg.assimilatorState;
+      const sizeKey = String(size);
+      const bookForSize = ast.book && ast.book[sizeKey];
+      if (bookForSize) {
+        const key = buildBookKey(size, side, cells);
+        const placementCount = countPlacements();
+        const bookMove = lookupBook(bookForSize, key, placementCount);
+        if (bookMove !== null && bookMove !== undefined && bookMove >= 0
+            && cells[bookMove] === 0 && !dead[bookMove] && hasAdjacentFreeIdx(bookMove)) {
+          // Discard any reuse-tree snapshot — a book hit means we didn't
+          // build an MCTS tree this turn, so the next call has no parent
+          // to navigate down from. Without this the next call's diff would
+          // mis-identify the played move and silently fall back anyway, but
+          // explicit discard is cheaper.
+          if (cfg.reuseTree) discardReuseSnapshot();
+          console.log(`[aiEngine:assimilator] BOOK HIT — key=${key} ply=${placementCount} → move=${bookMove}`);
+          return bookMove;
+        }
+      }
+    }
     if (cfg.endgame && countEmpty() <= endgameThreshold) {
       const r = runEndgame();
       if (r) return pickEps(r.scores, 0, 0);
@@ -1351,9 +1471,20 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
 // Async because the MCTS path yields between sim batches so wall-clock budget
 // (cfg.timeMs) is enforceable on Cloudflare Workers, where Date.now() is
 // frozen during synchronous JS. Returns Promise<{ row, col } | null>.
-export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer }) {
-  const cfg = AI_TIERS[tier];
-  if (!cfg) return null;
+//
+// `assimilatorState` is optional — only the worker (with Firestore access)
+// passes it. When omitted, the engine ignores the book / MAST / learned-weight
+// hooks and behaves identically to the corresponding non-Assimilator tier
+// (i.e., Assimilator falls back to plain `heavy` policy). The browser engine
+// always omits it, which is why the offline UI doesn't list the tier.
+export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer, assimilatorState }) {
+  const baseCfg = AI_TIERS[tier];
+  if (!baseCfg) return null;
+  // Per-call cfg surfaces tier name (so chooseMove / runMCTSRave can branch
+  // on cfg.tier) and the optional Assimilator state.
+  const cfg = assimilatorState
+    ? { ...baseCfg, tier, assimilatorState }
+    : { ...baseCfg, tier };
   initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer);
   const moveIdx = await chooseMove(cfg);
   if (moveIdx === null || moveIdx === undefined || moveIdx < 0) return null;

@@ -1,0 +1,15 @@
+[
+    {
+      "relation": [
+        "delegate_permission/common.handle_all_urls",
+        "delegate_permission/common.get_login_creds"
+      ],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.strukovnasamobor.ssviewer_ucenici.twa",
+        "sha256_cert_fingerprints": [
+          "60:2C:DA:3C:6B:FB:1A:FB:41:FC:F3:60:90:A6:E6:C4:1B:F4:BF:A1:FD:85:D7:F1:38:C0:29:D9:70:CA:11:C5"
+        ]
+      }
+    }
+]

@@ -9,20 +9,22 @@ export const isBotUid = (uid) => typeof uid === 'string' && uid.startsWith(BOT_U
 export const tierFromBotUid = (uid) => isBotUid(uid) ? uid.slice(BOT_UID_PREFIX.length) : null;
 
 export const BOT_DISPLAY = {
-  captor:    'Captor 🤖',
-  hoarder:   'Hoarder 🤖',
-  collector: 'Collector 🤖'
+  captor:      'Captor 🤖',
+  hoarder:     'Hoarder 🤖',
+  collector:   'Collector 🤖',
+  assimilator: 'Assimilator 🤖'
 };
 
-// Initial display ratings per tier. All three tiers now run MCTS-RAVE so the
-// strength gap is much smaller than the old oneply/fixedab/mctsrave ladder.
-// Tournament results (50-game A/B): captor (attackHeavy) loses ~−346 Elo to
-// collector (heavy), hoarder (DefenseHeavy) is expected mid-pack between the
-// two. Ratings reflect that compressed range.
+// All bots start at the same rating (1000) and let the live Elo system separate
+// them through actual play. Pre-tuned per-tier initial ratings were a relic of
+// the old oneply/fixedab/mctsrave ladder; now that all four tiers share the
+// MCTS-RAVE engine and only differ in rollout policy / learning, the initial
+// strength gap is small enough that observed Elo is the right source of truth.
 export const BOT_INITIAL_RATING = {
-  captor:    1500,
-  hoarder:   1700,
-  collector: 1900
+  captor:      1000,
+  hoarder:     1000,
+  collector:   1000,
+  assimilator: 1000
 };
 
 // Standard gridSizes that bots maintain queue presence for. Online play always

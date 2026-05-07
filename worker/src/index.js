@@ -13,6 +13,9 @@ import {
   rankedBotQueueDocId
 } from './ai/bots';
 import { getBotProfile, invalidateBotProfile } from './ai/botProfileCache';
+import { ingestFinishedGame } from './ai/assimilator/flush';
+import { getAssimilatorState } from './ai/assimilator/state';
+import { runFeatureWeightLearning } from './ai/assimilator/learn';
 
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -1639,17 +1642,26 @@ async function finalizeMatchCleanup(env, game) {
   const mode = normalizeMode(game.mode);
   const queueCollection = matchmakingCollection(mode);
   const uids = [game.player1uid, game.player2uid].filter(Boolean);
-  await Promise.all(uids.map(async (uid) => {
-    // Bots maintain persistent queue presence + a single shared profile across
-    // many parallel matches. Cleaning up after one match would (a) yank the
-    // bot's ranked queue entry until the next cron tick re-seeds it, leaving
-    // a ~60 s gap where humans can't match against the bot, and (b) flip the
-    // bot's profile state to 'idle' even though it's still mid-game in many
-    // other simultaneous matches.
-    if (isBotUid(uid)) return;
-    try { await deleteDocument(env, queueCollection, uid); } catch (_) {}
-    try { await setPlayerState(env, uid, 'idle'); } catch (_) {}
-  }));
+  // Per-uid cleanup runs in parallel with the Assimilator ingest — they
+  // touch disjoint Firestore collections (matchmakingQueue_*/players vs.
+  // assimilator/state) so there's no contention. Ingest is best-effort
+  // and never throws to the caller; quality-filter rejections are silent.
+  await Promise.all([
+    ...uids.map(async (uid) => {
+      // Bots maintain persistent queue presence + a single shared profile across
+      // many parallel matches. Cleaning up after one match would (a) yank the
+      // bot's ranked queue entry until the next cron tick re-seeds it, leaving
+      // a ~60 s gap where humans can't match against the bot, and (b) flip the
+      // bot's profile state to 'idle' even though it's still mid-game in many
+      // other simultaneous matches.
+      if (isBotUid(uid)) return;
+      try { await deleteDocument(env, queueCollection, uid); } catch (_) {}
+      try { await setPlayerState(env, uid, 'idle'); } catch (_) {}
+    }),
+    ingestFinishedGame(env, { getDocument, writeDocument }, game).catch((err) => {
+      console.warn('[finalizeMatchCleanup] assimilator ingest threw', err?.message);
+    })
+  ]);
 }
 
 // Strikes the player whose turn it currently is. Reverts the placed dot if the
@@ -2591,6 +2603,18 @@ export class MatchBot {
     const size = parseGridSize(game.data.gridSize);
     const state = normalizeGameState(game.data.gameStateJSON, size);
 
+    // Assimilator: pull the cached learning state (book + MAST + learned
+    // weights). One Firestore read per cold isolate; subsequent alarms reuse
+    // the in-memory cache. Non-Assimilator tiers skip the read entirely.
+    let assimilatorState = null;
+    if (cfg.tier === 'assimilator') {
+      try {
+        assimilatorState = await getAssimilatorState(this.env, getDocument);
+      } catch (err) {
+        console.warn(`${tag} assimilator state read failed:`, err?.message);
+      }
+    }
+
     const searchStart = Date.now();
     let move = null;
     let searchError = null;
@@ -2601,7 +2625,8 @@ export class MatchBot {
         size,
         phase: game.data.phase,
         lastPlaces: game.data.lastPlaces,
-        currentPlayer: cfg.botPlayerNumber
+        currentPlayer: cfg.botPlayerNumber,
+        assimilatorState
       });
     } catch (err) {
       searchError = err;
@@ -2653,7 +2678,27 @@ export default {
     // purge stay independent. event.cron is the literal pattern from
     // wrangler.toml that triggered this invocation.
     if (event.cron === '0 0 * * SAT') {
-      ctx.waitUntil(purgeOldGames(env));
+      // Saturday 00:00 UTC: chain the Assimilator weight learner BEFORE
+      // purgeOldGames so the BT update sees the games we're about to delete.
+      // Errors in either step are isolated — one's failure mustn't skip the
+      // other. Both wall-time-bounded (≤30 s combined under Free plan).
+      ctx.waitUntil((async () => {
+        try {
+          await runFeatureWeightLearning(env, {
+            getDocument,
+            writeDocument,
+            firestoreFetch,
+            firestoreObjectFromFields
+          });
+        } catch (err) {
+          console.error('[scheduled:SAT] runFeatureWeightLearning threw', err?.message);
+        }
+        try {
+          await purgeOldGames(env);
+        } catch (err) {
+          console.error('[scheduled:SAT] purgeOldGames threw', err?.message);
+        }
+      })());
       return;
     }
     // Bots are virtual (synthesized in /matchmaking/run from constants), so

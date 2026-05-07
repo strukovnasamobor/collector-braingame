@@ -1,17 +1,26 @@
 // Difficulty tier configuration shared between the main thread (UI / engine
 // wrapper) and the search worker. Pure constants — no React, no DOM.
 
-// All three tiers now run MCTS-RAVE with the tuned constants (mctsC=0.5,
+// All four tiers run MCTS-RAVE with the tuned constants (mctsC=0.5,
 // raveK=3000); the personality differentiator is the rollout/expansion policy.
-//   captor    — attackHeavy: aggressive, contests opponent territory
-//   hoarder   — collectHeavy: own-group focused, neutral on opponent contact
-//   collector — heavy: balanced offense + defense (tournament-tested strongest)
+//   captor      — attackHeavy: aggressive, contests opponent territory
+//   hoarder     — collectHeavy: own-group focused, neutral on opponent contact
+//   collector   — heavy: balanced offense + defense (tournament-tested strongest)
+//   assimilator — heavy + (online-only) opening book + MAST prior + learned
+//                 policy weights. The browser engine has no Firestore access,
+//                 so offline this entry exists for API parity but the offline
+//                 UI must NOT list it as a selectable opponent — the learning
+//                 components only have effect when the cloudflare worker
+//                 injects cfg.assimilatorState before the search.
 export const AI_TIERS = {
-  captor:    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false },
-  hoarder:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false },
-  collector: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
+  captor:      { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false },
+  hoarder:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false },
+  collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
+  assimilator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
 };
 
+// Offline-visible tier order. Excludes 'assimilator' — that tier is online-only
+// (its learning components live in Firestore, accessed only by the worker).
 export const TIER_ORDER = ['captor', 'hoarder', 'collector'];
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval

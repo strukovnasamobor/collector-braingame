@@ -9,6 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-512-maskable.png', 'i18n/en.json', 'i18n/hr.json'],
       manifest: {
+        id: "hr.strukovnasamobor.collector_braingame",
         name: 'Collector BrainGame',
         short_name: 'Collector BG',
         theme_color: '#000000',
