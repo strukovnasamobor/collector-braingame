@@ -1,8 +1,4 @@
-Ver. 1.0.0 (1)
-- deploy and make TWA with PWA Web Builder
-- Google Play Store new edition
 - change assetlinks.json
-- check readme file link to google play store, add support button
 
 OFFLINE AND ONLINE AI TIERS
 1. Captor - Zarobljivač     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }

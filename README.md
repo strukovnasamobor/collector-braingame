@@ -2,7 +2,9 @@
 
 Web App:<br>https://collector-braingame.web.app<br><br>
 
-<a href="https://play.google.com/store/apps/details?id=hr.strukovnasamobor.collector-braingame" target="_blank">
+Support:<br>https://www.paypal.com/ncp/payment/D3BT43AE8N5HN<br><br>
+
+<a href="https://play.google.com/store/apps/details?id=hr.strukovnasamobor.collector_braingame" target="_blank">
   <img src="public/icons/google_play_badge.png" height="40" alt="Get It On Google Play"/>
 </a>
 
