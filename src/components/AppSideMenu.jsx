@@ -18,12 +18,22 @@ import {
   pencilOutline,
   trashOutline,
   logOutOutline,
-  logoGithub
+  logoGithub,
+  globeOutline,
+  shieldCheckmarkOutline,
+  documentTextOutline
 } from 'ionicons/icons';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
 
 const SOURCE_CODE_URL = 'https://github.com/strukovnasamobor/collector-braingame';
+const WEB_APP_URL = 'https://collector-braingame.web.app/';
+const PRIVACY_POLICY_URL = 'https://collector-braingame.web.app/privacy_policy.html';
+const TERMS_URL = 'https://collector-braingame.web.app/terms_and_conditions.html';
+
+function openExternal(url) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 export default function AppSideMenu() {
   const { t, lang, setLang } = useI18n();
@@ -61,9 +71,10 @@ export default function AppSideMenu() {
     history.push('/online');
   };
 
-  const handleSourceCode = () => {
-    window.open(SOURCE_CODE_URL, '_blank', 'noopener,noreferrer');
-  };
+  const handleSourceCode = () => openExternal(SOURCE_CODE_URL);
+  const handleWebApp = () => openExternal(WEB_APP_URL);
+  const handlePrivacyPolicy = () => openExternal(PRIVACY_POLICY_URL);
+  const handleTerms = () => openExternal(TERMS_URL);
 
   return (
     <>
@@ -105,6 +116,18 @@ export default function AppSideMenu() {
             </IonList>
             <IonList lines="none">
               <IonMenuToggle autoHide={false}>
+                <IonItem button detail={false} onClick={handleWebApp}>
+                  <IonIcon slot="start" icon={globeOutline} />
+                  <IonLabel>{t('menu.web_app')}</IonLabel>
+                </IonItem>
+                <IonItem button detail={false} onClick={handlePrivacyPolicy}>
+                  <IonIcon slot="start" icon={shieldCheckmarkOutline} />
+                  <IonLabel>{t('menu.privacy_policy')}</IonLabel>
+                </IonItem>
+                <IonItem button detail={false} onClick={handleTerms}>
+                  <IonIcon slot="start" icon={documentTextOutline} />
+                  <IonLabel>{t('menu.terms')}</IonLabel>
+                </IonItem>
                 <IonItem button detail={false} onClick={handleSourceCode}>
                   <IonIcon slot="start" icon={logoGithub} />
                   <IonLabel>{t('menu.source_code')}</IonLabel>

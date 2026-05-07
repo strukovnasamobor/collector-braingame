@@ -22,6 +22,9 @@
     "change_language": "Set language",
     "change_name": "Change name",
     "source_code": "See source code",
+    "web_app": "Web app",
+    "privacy_policy": "Privacy Policy",
+    "terms": "Terms & Conditions",
     "delete_account": "Delete account"
   },
   "auth": {

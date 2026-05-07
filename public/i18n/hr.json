@@ -22,6 +22,9 @@
     "change_language": "Postavi jezik",
     "change_name": "Promijeni ime",
     "source_code": "Vidi izvorni kod",
+    "web_app": "Web aplikacija",
+    "privacy_policy": "Pravila privatnosti",
+    "terms": "Uvjeti korištenja",
     "delete_account": "Obriši račun"
   },
   "auth": {

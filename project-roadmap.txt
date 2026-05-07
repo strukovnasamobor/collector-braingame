@@ -1,12 +1,7 @@
-- test Collector Assimilator
-- adding link to web app, privacy_policy and t&c pagein side menu at the bottom
-
 Ver. 1.0.0 (1)
-- change production flags: firebase.js, vite.config.js
 - deploy and make TWA with PWA Web Builder
 - Google Play Store new edition
-- Github add tag and upload apk and zipped dist folder
-- firestore reset (all docs deleted, recreates bots with 1000/1000/1000)
+- change assetlinks.json
 - check readme file link to google play store, add support button
 
 OFFLINE AND ONLINE AI TIERS
