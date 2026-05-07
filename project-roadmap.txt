@@ -1,3 +1,4 @@
+- provjera google play linka u README.md
 - change assetlinks.json
 
 OFFLINE AND ONLINE AI TIERS
