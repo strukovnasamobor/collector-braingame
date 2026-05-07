@@ -1,5 +1,5 @@
 - test Collector Assimilator
-- adding link to privacy_policy and t&c pagein side menu at the bottom
+- adding link to web app, privacy_policy and t&c pagein side menu at the bottom
 
 Ver. 1.0.0 (1)
 - change production flags: firebase.js, vite.config.js
