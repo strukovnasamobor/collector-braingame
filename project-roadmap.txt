@@ -1,5 +1,6 @@
 - provjera google play linka u README.md
 - change assetlinks.json
+? leaderboard for stadard gamw sorted by coins
 
 OFFLINE AND ONLINE AI TIERS
 1. Captor - Zarobljivač     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
