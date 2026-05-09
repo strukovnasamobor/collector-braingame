@@ -23,6 +23,12 @@ import {
 
 const HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const CLAIM_TIMEOUT_POLL_MS = 5 * 1000;
+// HTTP submitGameMove retry budget: 1 initial attempt + 2 silent retries.
+// Most rejections are transient races (heartbeat bumping updateTime, opponent's
+// move landing the same tick); a short backoff usually lets the Firestore
+// snapshot catch up so attempt 2 or 3 succeeds without surfacing the alert.
+const MAX_MOVE_ATTEMPTS = 3;
+const MOVE_RETRY_DELAY_MS = 300;
 
 export function useOnlineGame(gameId) {
   const { user } = useAuth();
@@ -354,18 +360,26 @@ export function useOnlineGame(gameId) {
 
       // Send to the server in order: each click chains onto the previous send,
       // so an eliminate is only dispatched after its preceding place is durable.
-      // On failure we clear the entire queue: the queued eliminate belongs to
-      // the same turn as the failed place, so it would land server-side as a
-      // re-interpreted placement (server dispatches by phase) and corrupt turn
-      // alignment. Bailing the whole turn is the safe move.
+      // Each send gets up to MAX_MOVE_ATTEMPTS tries with a short backoff —
+      // transient 409/412 races usually clear by the second snapshot tick.
+      // Only the final failure clears the queue: the queued eliminate belongs
+      // to the same turn as the failed place, so leaving it would land
+      // server-side as a re-interpreted placement and corrupt turn alignment.
       submitChainRef.current = submitChainRef.current
         .catch(() => {})
         .then(async () => {
-          try {
-            await submitGameMove({ gameId, row, col, kind: newMove.kind });
-          } catch (e) {
-            setPendingMoves([]);
-            setLocalError('notifications.move_rejected');
+          for (let attempt = 1; attempt <= MAX_MOVE_ATTEMPTS; attempt++) {
+            try {
+              await submitGameMove({ gameId, row, col, kind: newMove.kind });
+              return;
+            } catch (e) {
+              if (attempt === MAX_MOVE_ATTEMPTS) {
+                setPendingMoves([]);
+                setLocalError('notifications.move_rejected');
+                return;
+              }
+              await new Promise((r) => setTimeout(r, MOVE_RETRY_DELAY_MS));
+            }
           }
         });
     },

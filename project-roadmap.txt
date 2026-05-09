@@ -1,6 +1,14 @@
 - provjera google play linka u README.md
 - change assetlinks.json
 
+GOLD POINTS - upgrade
+- only on 10x10 board
+- 10 BGC cost buying before entering game when selecting 10x10 board
+- right click / long tap to set a gold point
+- doesn't connect to other colors just to others cold points with gold connections
+- gold connections cut connections of other points if it crosses
+- each player can put gold coins and they will connect to each other
+
 OFFLINE AND ONLINE AI TIERS
 1. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 2. Consolidator             { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }

@@ -537,6 +537,23 @@ body.dark .sk-turn-timer {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* Standard / Ranked tab switcher: white tray with dark labels in both
+ * light and dark themes so the segment reads as a clean control surface. */
+.sk-leaderboard-segment {
+  --background: #ffffff;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.sk-leaderboard-segment ion-segment-button {
+  --background: #ffffff;
+  --background-checked: #ffffff;
+  --color: #555555;
+  --color-checked: #007bff;
+  --indicator-color: rgba(0, 123, 255, 0.12);
+}
+
 .sk-leaderboard-table {
   width: 100%;
   border-collapse: collapse;
