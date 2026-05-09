@@ -9,30 +9,32 @@ export const isBotUid = (uid) => typeof uid === 'string' && uid.startsWith(BOT_U
 export const tierFromBotUid = (uid) => isBotUid(uid) ? uid.slice(BOT_UID_PREFIX.length) : null;
 
 export const BOT_DISPLAY = {
-  captor:      'Captor 🤖',
-  hoarder:     'Hoarder 🤖',
-  collector:   'Collector 🤖',
-  assimilator: 'Assimilator 🤖'
+  confiscator:  'Confiscator 🤖',
+  consolidator: 'Consolidator 🤖',
+  predator:     'Predator 🤖',
+  collector:    'Collector 🤖',
+  assimilator:  'Assimilator 🤖'
 };
 
 // All bots start at the same rating (1000) and let the live Elo system separate
 // them through actual play. Pre-tuned per-tier initial ratings were a relic of
-// the old oneply/fixedab/mctsrave ladder; now that all four tiers share the
+// the old oneply/fixedab/mctsrave ladder; now that all five tiers share the
 // MCTS-RAVE engine and only differ in rollout policy / learning, the initial
 // strength gap is small enough that observed Elo is the right source of truth.
 export const BOT_INITIAL_RATING = {
-  captor:      1000,
-  hoarder:     1000,
-  collector:   1000,
-  assimilator: 1000
+  confiscator:  1000,
+  consolidator: 1000,
+  predator:     1000,
+  collector:    1000,
+  assimilator:  1000
 };
 
 // Standard gridSizes that bots maintain queue presence for. Online play always
 // uses the 30 s turn timer, so we don't need timer-off variants.
 export const STANDARD_BOT_GRID_SIZES = [6, 8, 10];
 
-// Composite queue-doc id for a standard bot entry: `bot:captor_8` etc.
-// Ranked has only one valid config (8x8 timer-on), so we use plain `bot:captor`.
+// Composite queue-doc id for a standard bot entry: `bot:confiscator_8` etc.
+// Ranked has only one valid config (8x8 timer-on), so we use plain `bot:confiscator`.
 export const standardBotQueueDocId = (tier, gridSize) => `${botUidFor(tier)}_${gridSize}`;
 export const rankedBotQueueDocId = (tier) => botUidFor(tier);
 

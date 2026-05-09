@@ -2,11 +2,12 @@
 - change assetlinks.json
 
 OFFLINE AND ONLINE AI TIERS
-1. Captor - Zarobljivač     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-2. Hoarder - Gomilatelj     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-3. Collector - Sakupljač    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+1. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+2. Consolidator             { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+3. Predator                 { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 - Only in online games:
-4. Assimilator - Asimilator { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+4. Collector - Sakupljač    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+5. Assimilator - Asimilator { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
                             + opening book + MAST table + feature-weight learning
 
 10 x 10 BOARD

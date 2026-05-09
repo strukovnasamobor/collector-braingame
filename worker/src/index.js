@@ -1306,7 +1306,7 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     // Bot-aware pairing: a candidate's *uid* (the player identity going into the
     // game doc) is `entry.data.uid`; the *queue doc id* (`entry.id`) may differ
-    // for bots that use a composite id like `bot:captor_8` so the same bot uid
+    // for bots that use a composite id like `bot:confiscator_8` so the same bot uid
     // can hold queue presence at multiple grid sizes simultaneously. Humans have
     // entry.data.uid === entry.id so this collapses to the original logic.
     const candidateUid = chosen.candidate.data?.uid || chosen.candidate.id;

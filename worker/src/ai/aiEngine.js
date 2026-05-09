@@ -1221,7 +1221,7 @@ async function runMCTSRave(cfg) {
   lightPolicyEff = cfg.policy === 'light';
   if (cfg.policy === 'collectHeavy') weightFnEff = collectHeavyWeight;
   else if (cfg.policy === 'attackHeavy') weightFnEff = attackHeavyWeight;
-  else if (cfg.policy === 'DefenseHeavy') weightFnEff = defenseHeavyWeight;
+  else if (cfg.policy === 'defenseHeavy') weightFnEff = defenseHeavyWeight;
   else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
 
   // Assimilator hookup. Only takes effect when the worker injected
