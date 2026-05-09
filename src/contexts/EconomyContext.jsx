@@ -7,7 +7,7 @@ import { purchaseGridUnlock as purchaseGridUnlockCall } from '../services/fireba
 const EconomyContext = createContext(null);
 
 const DEFAULT_UNLOCKED_GRIDS = [6];
-export const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000, 12: 100000 };
+export const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000 };
 
 export function EconomyProvider({ children }) {
   const { user } = useAuth();

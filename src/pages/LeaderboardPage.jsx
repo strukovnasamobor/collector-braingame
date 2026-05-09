@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   IonPage,
   IonContent,
-  IonSpinner
+  IonSpinner,
+  IonSegment,
+  IonSegmentButton,
+  IonLabel
 } from '@ionic/react';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import AppHeader from '../components/AppHeader';
@@ -11,7 +14,7 @@ import { db } from '../../firebase';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-// Tiebreaker chain: rating desc → win-ratio desc → wins desc →
+// Tiebreaker chain for ranked: rating desc → win-ratio desc → wins desc →
 // losses asc → most-recent-activity desc.
 function rankCompare(a, b) {
   const aR = Number(a.rating || 0);
@@ -37,7 +40,20 @@ function rankCompare(a, b) {
   return bT - aT;
 }
 
-function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
+// Tiebreaker chain for standard: coins desc → most-recent-activity desc.
+// Wins/draws/losses aren't tracked per-mode and don't apply to the standard
+// leaderboard.
+function coinCompare(a, b) {
+  const aC = Number(a.coins || 0);
+  const bC = Number(b.coins || 0);
+  if (aC !== bC) return bC - aC;
+
+  const aT = Date.parse(a.updatedAt || '') || 0;
+  const bT = Date.parse(b.updatedAt || '') || 0;
+  return bT - aT;
+}
+
+function Table({ rows, t, empty, keyFn, renderName, valueColumnLabel, renderValue, showStats }) {
   if (!rows || rows.length === 0) {
     return <p style={{ textAlign: 'center', marginTop: 24 }}>{empty}</p>;
   }
@@ -47,10 +63,14 @@ function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
         <tr>
           <th>{t('leaderboard.rank')}</th>
           <th>{t('leaderboard.player')}</th>
-          <th>{t('leaderboard.rating')}</th>
-          <th className="sk-stat-cell">{t('leaderboard.wins_short')}</th>
-          <th className="sk-stat-cell">{t('leaderboard.draws_short')}</th>
-          <th className="sk-stat-cell">{t('leaderboard.losses_short')}</th>
+          <th>{valueColumnLabel}</th>
+          {showStats && (
+            <>
+              <th className="sk-stat-cell">{t('leaderboard.wins_short')}</th>
+              <th className="sk-stat-cell">{t('leaderboard.draws_short')}</th>
+              <th className="sk-stat-cell">{t('leaderboard.losses_short')}</th>
+            </>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -66,10 +86,14 @@ function Table({ rows, t, empty, keyFn, renderName, renderRating }) {
               )}
             </td>
             <td className="sk-name-cell">{renderName(p)}</td>
-            <td className="sk-rating-cell">{renderRating(p)}</td>
-            <td className="sk-stat-cell">{p.wins ?? 0}</td>
-            <td className="sk-stat-cell">{p.draws ?? 0}</td>
-            <td className="sk-stat-cell">{p.losses ?? 0}</td>
+            <td className="sk-rating-cell">{renderValue(p)}</td>
+            {showStats && (
+              <>
+                <td className="sk-stat-cell">{p.wins ?? 0}</td>
+                <td className="sk-stat-cell">{p.draws ?? 0}</td>
+                <td className="sk-stat-cell">{p.losses ?? 0}</td>
+              </>
+            )}
           </tr>
         ))}
       </tbody>
@@ -82,10 +106,10 @@ export default function LeaderboardPage() {
   const [onlinePlayers, setOnlinePlayers] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mode, setMode] = useState('ranked');
 
-  // Live subscription to the players collection. Whenever any rating field
-  // changes (e.g. after a ranked match finalizes or a bot's rating drifts),
-  // the table updates in place without requiring a page reload.
+  // Live subscription to the players collection. Whenever any tracked field
+  // changes (rating, coins, wins, ...) the table updates in place.
   useEffect(() => {
     setLoading(true);
     setError('');
@@ -95,10 +119,6 @@ export default function LeaderboardPage() {
       (snap) => {
         const arr = [];
         snap.forEach((d) => arr.push({ id: d.id, ...d.data() }));
-        // Firestore can only orderBy a single field cheaply. Apply the full
-        // tiebreaker chain client-side so equal-rating rows resolve by
-        // win-ratio, then total wins, then fewest losses, then recency.
-        arr.sort(rankCompare);
         setOnlinePlayers(arr);
         setLoading(false);
       },
@@ -110,11 +130,40 @@ export default function LeaderboardPage() {
     return () => unsubscribe();
   }, []);
 
+  // Re-sort client-side per mode. Firestore's orderBy stays on `rating` so
+  // the snapshot always returns the same set of docs; the standard view
+  // simply re-sorts that set by coins.
+  const sortedRows = useMemo(() => {
+    if (!onlinePlayers) return null;
+    const compare = mode === 'standard' ? coinCompare : rankCompare;
+    return [...onlinePlayers].sort(compare);
+  }, [onlinePlayers, mode]);
+
+  const valueColumnLabel =
+    mode === 'standard' ? t('leaderboard.coins') : t('leaderboard.rating');
+  const renderValue =
+    mode === 'standard'
+      ? (p) => Number(p.coins || 0).toLocaleString()
+      : (p) => p.rating;
+
   return (
     <IonPage>
       <AppHeader title={t('leaderboard.title')} />
       <IonContent fullscreen>
         <div className="sk-tab-section ion-padding">
+          <IonSegment
+            value={mode}
+            onIonChange={(e) => setMode(e.detail.value)}
+            className="sk-leaderboard-segment"
+          >
+            <IonSegmentButton value="ranked">
+              <IonLabel>{t('leaderboard.tab_ranked')}</IonLabel>
+            </IonSegmentButton>
+            <IonSegmentButton value="standard">
+              <IonLabel>{t('leaderboard.tab_standard')}</IonLabel>
+            </IonSegmentButton>
+          </IonSegment>
+
           <div className="sk-leaderboard-container">
             {loading && (
               <div style={{ textAlign: 'center', marginTop: 24 }}>
@@ -124,9 +173,9 @@ export default function LeaderboardPage() {
             {error && (
               <p style={{ color: '#dc3545', textAlign: 'center' }}>{error}</p>
             )}
-            {onlinePlayers && !loading && (
+            {sortedRows && !loading && (
               <Table
-                rows={onlinePlayers}
+                rows={sortedRows}
                 t={t}
                 empty={t('leaderboard.empty_online')}
                 keyFn={(p) => p.id || p.displayName}
@@ -139,7 +188,9 @@ export default function LeaderboardPage() {
                   const isBot = typeof p.id === 'string' && p.id.startsWith('bot:');
                   return isBot && !name.includes('🤖') ? `${name} 🤖` : name;
                 }}
-                renderRating={(p) => p.rating}
+                valueColumnLabel={valueColumnLabel}
+                renderValue={renderValue}
+                showStats={mode === 'ranked'}
               />
             )}
           </div>

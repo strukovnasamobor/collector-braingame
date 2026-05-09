@@ -9,7 +9,7 @@ import {
 export const DEFAULT_FIDE_RATING = DEFAULT_DISPLAY_RATING;
 export const ELO_K_FACTOR = OPEN_SKILL_BETA;
 export const LOCAL_TURN_TIME = 30;
-export const LOCAL_MAX_TIMEOUTS = 3;
+export const LOCAL_MAX_TIMEOUTS = 2;
 
 export function createInitialState(size) {
   const state = [];

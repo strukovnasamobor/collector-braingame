@@ -2,7 +2,7 @@
 // these mirror its rules so the UI rejects bad input early and doesn't waste round-trips.
 
 const MAX_DISPLAY_NAME_LENGTH = 32;
-const ALLOWED_GRID_SIZES = [4, 6, 8, 10, 12];
+const ALLOWED_GRID_SIZES = [6, 8, 10];
 const ROOM_CODE_LENGTH = 6;
 
 const DANGEROUS_NAME_CHARS = new RegExp(

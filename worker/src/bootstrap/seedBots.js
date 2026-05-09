@@ -37,7 +37,7 @@ export async function ensureBotProfilesOnce(env, helpers) {
   if (bootstrapped) return;
   const { getDocument, writeDocument } = helpers;
   const nowIso = new Date().toISOString();
-  const ALL_GRIDS = [6, 8, 10, 12];
+  const ALL_GRIDS = [6, 8, 10];
 
   // One-shot bot rating reset (v1.0). Earlier deploys seeded captor=1500,
   // hoarder=1700, collector=1900 to encode expected strength; v1.0 flattens

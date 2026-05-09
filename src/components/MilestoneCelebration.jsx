@@ -60,7 +60,6 @@ const MOTIF_BY_TIER = {
 };
 
 function tierFor(degree) {
-  if (degree >= 19) return 3;
   if (degree >= 10) return 2;
   return 1;
 }
@@ -203,18 +202,15 @@ function playChime(event) {
   });
 }
 
-// Maps a word's degree (1-indexed position in the milestone list) to the exact
-// burst-count + particles-per-burst pair, per the user-supplied table:
-//   1-9   (Good..Brilliant)            -> 1 burst, degree*10 (10..90)
-//   10-18 (Fantastic..Phenomenal)      -> 2 bursts, lookup [50,60,70,80,90,100,110,120,140]
-//                                        (note the +20 jump at degree 18)
-//   19-24 (Magnificent..Sublime)       -> 3 bursts, (degree-9)*10 (100..150)
-//   25    (THE COLLECTOR, only on 12×12) -> 5 bursts, 200
-const TIER2_PARTICLES = [50, 60, 70, 80, 90, 100, 110, 120, 140];
+// Maps a word's degree (1-indexed position in the milestone list) to the
+// burst-count + particles-per-burst pair:
+//   1-9  (Good..Brilliant)              -> 1 burst, degree*10 (10..90)
+//   10-15 (Fantastic..Incredible)       -> 2 bursts, lookup [50,60,70,80,90,100]
+//   THE COLLECTOR on 10×10 (degree 16)  -> 3 bursts, 100 (300 particles total)
+const TIER2_PARTICLES = [50, 60, 70, 80, 90, 100]; // degrees 10..15
 
-function celebrationParams(degree) {
-  if (degree >= 25) return { burstCount: 5, particlesPerBurst: 200 };
-  if (degree >= 19) return { burstCount: 3, particlesPerBurst: (degree - 9) * 10 };
+function celebrationParams(degree, isMax) {
+  if (isMax) return { burstCount: 3, particlesPerBurst: 100 };
   if (degree >= 10) return { burstCount: 2, particlesPerBurst: TIER2_PARTICLES[degree - 10] };
   return { burstCount: 1, particlesPerBurst: Math.max(10, degree * 10) };
 }
@@ -222,7 +218,7 @@ function celebrationParams(degree) {
 function fireConfetti(confetti, event) {
   const colors = event.isMax ? MAX_PALETTE : PLAYER_PALETTES[event.player] || PLAYER_PALETTES[1];
   const degree = Math.max(1, event.degree || 1);
-  const { burstCount, particlesPerBurst } = celebrationParams(degree);
+  const { burstCount, particlesPerBurst } = celebrationParams(degree, event.isMax);
   const spread = event.isMax ? 360 : Math.min(180, 80 + degree * 6);
 
   for (let i = 0; i < burstCount; i++) {

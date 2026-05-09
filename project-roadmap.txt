@@ -1,6 +1,5 @@
 - provjera google play linka u README.md
 - change assetlinks.json
-? leaderboard for stadard gamw sorted by coins
 
 OFFLINE AND ONLINE AI TIERS
 1. Captor - Zarobljivač     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
@@ -9,36 +8,6 @@ OFFLINE AND ONLINE AI TIERS
 - Only in online games:
 4. Assimilator - Asimilator { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
                             + opening book + MAST table + feature-weight learning
-*** Upgrade ***
-5. AlphaCollector           { kind: 'alphazero' } + learning
-
-12 x 12 BOARD
-#	Word		    P	B	C/B	T
-1	Good		    12	1	10	10
-2	Nice		    13	1	20	20
-3	Great		    14	1	30	30
-4	Excellent	    15	1	40	40
-5	Wonderful	    16	1	50	50
-6	Awesome		    17	1	60	60
-7	Fabulous	    18	1	70	70
-8	Amazing		    19	1	80	80
-9	Brilliant	    20	1	90	90
-10	Fantastic	    21	2	50	100
-11	Marvelous	    22	2	60	120
-12	Outstanding	    23	2	70	140
-13	Superb		    24	2	80	160
-14	Stunning	    25	2	90	180
-15	Incredible	    26	2	100 200
-16	Spectacular	    27	2	110	220
-17	Extraordinary	28	2	120 240
-18	Phenomenal	    29	2	140 280
-19	Magnificent	    30	3	100	300
-20	Breathtaking	31	3	110	330
-21	Astonishing	    32	3	120	360
-22	Mind-blowing	33	3	130	390
-23	Unbelievable	34	3	140	420
-24	Sublime		    35	3	150	450
-25	THE COLLECTOR	36	5   200 1000
 
 10 x 10 BOARD
 #	Word		    P	B	C/B	T
@@ -57,7 +26,7 @@ OFFLINE AND ONLINE AI TIERS
 13	Superb		    22	2	80	160
 14	Stunning	    23	2	90	180
 15	Incredible	    24	2	100 200
-16	Spectacular	    25	2	110	220
+16	THE COLLECTOR	25	3   100 300
 
 8 x 8 BOARD
 #	Word		    P	B	C/B	T
@@ -91,8 +60,7 @@ GAMIFICATION
     - grid size online games
        - 1000 coins for 8x8 online grid
        - 10 000 coins for 10x10 online grid
-       - 100 000 coins for 12x12 online grid
-- protect coins and accesing grid sizes with backend
+- protected coins and accesing grid sizes with backend
 
 TESTS OF EARNING/LOSING BGC
 + earning by wining

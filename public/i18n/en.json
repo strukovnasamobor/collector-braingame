@@ -107,7 +107,7 @@
     "invalid_placement": "Invalid placement! You must place next to an existing tile or on an empty field.",
     "must_eliminate_adjacent": "You must eliminate an adjacent cell!",
     "enter_both_names": "Please enter both player names!",
-    "timeout_loss": "{player} lost due to inactivity (3 missed turns)!",
+    "timeout_loss": "{player} lost due to inactivity (2 missed turns)!",
     "opponent_left_reason": "Other player left the game",
     "rating_change": "Rating: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Leave the game?",
@@ -133,6 +133,7 @@
     "rank": "#",
     "player": "Player",
     "rating": "Rating",
+    "coins": "Coins",
     "wdl": "W / D / L",
     "wins_short": "W",
     "draws_short": "D",
@@ -141,6 +142,8 @@
     "empty_online": "No online players yet.",
     "local_section": "Local",
     "online_section": "Online",
+    "tab_ranked": "Ranked",
+    "tab_standard": "Standard",
     "loading": "Loading..."
   },
   "rules": {

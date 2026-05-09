@@ -107,7 +107,7 @@
     "invalid_placement": "Nevaljano postavljanje! Morate postaviti pokraj postojeće pločice ili na prazno polje.",
     "must_eliminate_adjacent": "Morate osjenčati susjednu ćeliju!",
     "enter_both_names": "Molimo unesite oba imena igrača!",
-    "timeout_loss": "{player} je izgubio zbog neaktivnosti (3 propuštena poteza)!",
+    "timeout_loss": "{player} je izgubio zbog neaktivnosti (2 propuštena poteza)!",
     "opponent_left_reason": "Drugi igrač je napustio igru",
     "rating_change": "Rejting: {p1} {d1} ({r1}), {p2} {d2} ({r2}).",
     "leaver_warning_title": "Napustiti igru?",
@@ -133,6 +133,7 @@
     "rank": "#",
     "player": "Igrač",
     "rating": "Rejting",
+    "coins": "Novčići",
     "wdl": "P / N / G",
     "wins_short": "P",
     "draws_short": "N",
@@ -141,6 +142,8 @@
     "empty_online": "Još nema online igrača.",
     "local_section": "Lokalno",
     "online_section": "Online",
+    "tab_ranked": "Rangirano",
+    "tab_standard": "Standardna",
     "loading": "Učitavanje..."
   },
   "rules": {

@@ -67,13 +67,13 @@ export default function LobbyScreen() {
   // fall back to the smallest unlocked size.
   useEffect(() => {
     if (!isGridUnlocked(gridSize)) {
-      const fallback = [6, 8, 10, 12].find((n) => isGridUnlocked(n)) || 6;
+      const fallback = [6, 8, 10].find((n) => isGridUnlocked(n)) || 6;
       setGridSize(fallback);
     }
   }, [gridSize, isGridUnlocked]);
 
   const lockedGridSizes = useMemo(
-    () => [8, 10, 12].filter((n) => !isGridUnlocked(n)),
+    () => [8, 10].filter((n) => !isGridUnlocked(n)),
     [isGridUnlocked]
   );
 
@@ -172,7 +172,7 @@ export default function LobbyScreen() {
                   value={gridSize}
                   onIonChange={(e) => setGridSize(Number(e.detail.value))}
                 >
-                  {[6, 8, 10, 12]
+                  {[6, 8, 10]
                     .filter((n) => isGridUnlocked(n))
                     .map((n) => (
                       <IonSelectOption key={n} value={n}>

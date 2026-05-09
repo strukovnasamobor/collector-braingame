@@ -25,7 +25,7 @@ function useQuery() {
     return new URLSearchParams(useLocation().search);
 }
 
-const ALLOWED_GRID_SIZES = [4, 6, 8, 10, 12];
+const ALLOWED_GRID_SIZES = [6, 8, 10];
 
 export default function MatchmakingQueuePage() {
     const { t } = useI18n();

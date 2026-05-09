@@ -1,17 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const WORDS_12 = [
-  'Good', 'Nice', 'Great', 'Excellent', 'Wonderful', 'Awesome',
-  'Fabulous', 'Amazing', 'Brilliant', 'Fantastic', 'Marvelous',
-  'Outstanding', 'Superb', 'Stunning', 'Incredible', 'Spectacular',
-  'Extraordinary', 'Phenomenal', 'Magnificent', 'Breathtaking',
-  'Astonishing', 'Mind-blowing', 'Unbelievable', 'Sublime', 'COLLECTOR'
-];
-
 const WORDS_10 = [
   'Good', 'Nice', 'Great', 'Excellent', 'Wonderful', 'Awesome',
   'Fabulous', 'Amazing', 'Brilliant', 'Fantastic', 'Marvelous',
-  'Outstanding', 'Superb', 'Stunning', 'Incredible', 'Spectacular'
+  'Outstanding', 'Superb', 'Stunning', 'Incredible', 'COLLECTOR'
 ];
 
 const WORDS_8 = [
@@ -30,8 +22,7 @@ function buildMap(start, words) {
 export const MILESTONES_BY_SIZE = {
   6: buildMap(6, WORDS_6),     // levels 6..9
   8: buildMap(8, WORDS_8),     // levels 8..16
-  10: buildMap(10, WORDS_10),  // levels 10..25
-  12: buildMap(12, WORDS_12)   // levels 12..36
+  10: buildMap(10, WORDS_10)   // levels 10..25 (ends with COLLECTOR)
 };
 
 function getMilestonesFor(gridSize) {

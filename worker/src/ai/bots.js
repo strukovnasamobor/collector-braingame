@@ -29,7 +29,7 @@ export const BOT_INITIAL_RATING = {
 
 // Standard gridSizes that bots maintain queue presence for. Online play always
 // uses the 30 s turn timer, so we don't need timer-off variants.
-export const STANDARD_BOT_GRID_SIZES = [6, 8, 10, 12];
+export const STANDARD_BOT_GRID_SIZES = [6, 8, 10];
 
 // Composite queue-doc id for a standard bot entry: `bot:captor_8` etc.
 // Ranked has only one valid config (8x8 timer-on), so we use plain `bot:captor`.

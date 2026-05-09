@@ -66,7 +66,7 @@ const ACTIVE_GAME_QUERY_LIMIT = 5;
 const MATCHMAKING_POOL_DIVISOR = 10;
 const MATCHMAKING_POOL_MAX = 1000;
 
-const ALLOWED_GRID_SIZES = new Set([4, 6, 8, 10, 12]);
+const ALLOWED_GRID_SIZES = new Set([6, 8, 10]);
 const RANKED_GRID_SIZE = 8;
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{6}$/;
 const GAME_ID_PATTERN = /^[A-Za-z0-9_]{1,40}$/;
@@ -1723,7 +1723,7 @@ async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) 
     }
 
     try {
-      if (newCount >= 3) {
+      if (newCount >= 2) {
         const s1 = getBiggestGroup(revertedState, size, 1);
         const s2 = getBiggestGroup(revertedState, size, 2);
         const winner = targetPlayerNumber === 1 ? 2 : 1;
@@ -2132,7 +2132,7 @@ async function handleGameAction(env, authUser, body) {
   return errorResponse('Unknown game action.', 400);
 }
 
-const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000, 12: 100000 };
+const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000 };
 
 async function handleUnlockGrid(env, authUser, body) {
   const size = Number(body.size);
