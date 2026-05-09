@@ -156,11 +156,11 @@ export default function LeaderboardPage() {
             onIonChange={(e) => setMode(e.detail.value)}
             className="sk-leaderboard-segment"
           >
-            <IonSegmentButton value="ranked">
-              <IonLabel>{t('leaderboard.tab_ranked')}</IonLabel>
-            </IonSegmentButton>
             <IonSegmentButton value="standard">
               <IonLabel>{t('leaderboard.tab_standard')}</IonLabel>
+            </IonSegmentButton>
+            <IonSegmentButton value="ranked">
+              <IonLabel>{t('leaderboard.tab_ranked')}</IonLabel>
             </IonSegmentButton>
           </IonSegment>
 
