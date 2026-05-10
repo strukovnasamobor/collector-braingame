@@ -30,6 +30,18 @@ export const TIER_ORDER = ['confiscator', 'conservator', 'cumulator'];
 export const ENDGAME_THRESHOLD = 12;
 export const ENDGAME_SAFETY_MS = 2000;
 
+// Skip the endgame solver entirely on boards smaller than this. The αβ-to-
+// terminal handoff is too aggressive on tiny boards — MCTS-RAVE plays the
+// whole game on 4×4 and 6×6.
+export const MIN_ENDGAME_BOARD_SIZE = 8;
+
+// Cap each tier's per-move time budget (cfg.timeMs) at this value when the
+// board is below MIN_ENDGAME_BOARD_SIZE. The full 12 s budget is overkill on
+// 4×4 / 6×6 — MCTS-RAVE converges quickly there, and the extra wall-clock
+// only adds latency without improving move quality. Larger boards keep
+// whatever cfg.timeMs the tier configured.
+export const SMALL_BOARD_MAX_TIME_MS = 6000;
+
 // Eval — basic (Novice)
 export const EVAL_BASIC_MATERIAL    = 10.0;
 export const EVAL_BASIC_LIBERTY     = 0.4;

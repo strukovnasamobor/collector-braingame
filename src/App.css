@@ -543,21 +543,21 @@ body.dark .sk-turn-timer {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Standard / Ranked tab switcher: white tray with dark labels in both
- * light and dark themes so the segment reads as a clean control surface. */
+/* Standard / Ranked tab switcher: theme-aware tray that follows the
+ * dialog/user-bar palette so it inverts cleanly in dark mode. */
 .sk-leaderboard-segment {
-  --background: #ffffff;
-  background: #ffffff;
+  --background: var(--sk-dialog-bg);
+  background: var(--sk-dialog-bg);
   border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 .sk-leaderboard-segment ion-segment-button {
-  --background: #ffffff;
-  --background-checked: #ffffff;
-  --color: #555555;
+  --background: var(--sk-dialog-bg);
+  --background-checked: var(--sk-dialog-bg);
+  --color: var(--sk-user-bar-color);
   --color-checked: #007bff;
-  --indicator-color: rgba(0, 123, 255, 0.12);
+  --indicator-color: rgba(0, 123, 255, 0.18);
 }
 
 .sk-leaderboard-table {

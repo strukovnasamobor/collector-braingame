@@ -22,6 +22,7 @@ OFFLINE AND ONLINE AI TIERS
         - ownAdj - number of your own dots adjacent
         - oppAdj - number of opponent's dots adjacent
         - deadAdj - number of dead (eliminated) cells adjacent
+- in offline and online standard game on 6x6 board all AI tiers - timeMs: 6000, endgame: false 
 - in standard game on 6x6 board Human is always playing first
 - in ranked game player with lower ranking plays first, if Human vs Bot is a tie Human is always playing first, if Human vs Human tie then random
 

@@ -12,6 +12,8 @@ import {
   AI_TIERS,
   ENDGAME_THRESHOLD,
   ENDGAME_SAFETY_MS,
+  MIN_ENDGAME_BOARD_SIZE,
+  SMALL_BOARD_MAX_TIME_MS,
   EVAL_BASIC_MATERIAL,
   EVAL_BASIC_LIBERTY,
   EVAL_BASIC_NEUTRAL_PEN,
@@ -1270,6 +1272,14 @@ function countEmpty() {
 }
 
 async function chooseMove(cfg) {
+  // Cap the per-move time budget on small boards. MCTS-RAVE converges fast
+  // when the position is tiny; the full 12 s budget just adds latency.
+  // Spread to a new cfg so we don't mutate the shared AI_TIERS entry.
+  if (size > 0 && size < MIN_ENDGAME_BOARD_SIZE
+      && Number(cfg.timeMs) > SMALL_BOARD_MAX_TIME_MS) {
+    cfg = { ...cfg, timeMs: SMALL_BOARD_MAX_TIME_MS };
+  }
+
   // Set the eval pointer for tiers that use one
   currentEval = EVAL_BY_NAME[cfg.evalName] || evalBasic;
 
@@ -1284,7 +1294,7 @@ async function chooseMove(cfg) {
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'fixedab') {
-    if (cfg.endgame && countEmpty() <= endgameThreshold) {
+    if (cfg.endgame && size >= MIN_ENDGAME_BOARD_SIZE && countEmpty() <= endgameThreshold) {
       const eg = runEndgame();
       if (eg) return pickEps(eg.scores, 0, 0);
     }
@@ -1292,7 +1302,7 @@ async function chooseMove(cfg) {
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {
-    if (cfg.endgame && countEmpty() <= endgameThreshold) {
+    if (cfg.endgame && size >= MIN_ENDGAME_BOARD_SIZE && countEmpty() <= endgameThreshold) {
       const r = runEndgame();
       if (r) return pickEps(r.scores, 0, 0);
     }
