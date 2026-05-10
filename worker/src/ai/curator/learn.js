@@ -10,18 +10,18 @@
 //    from placementHistory alone — kept at its hand-tuned −2.
 //  - The constant baseline (`1` in the formula) cancels out under softmax and
 //    has no gradient, so it stays at 1 too.
-// Learned values are persisted in `assimilator/state.policyWeights`. The
-// engine reads them via the Assimilator-specific weight closure; if the doc
+// Learned values are persisted in `curator/state.policyWeights`. The
+// engine reads them via the Curator-specific weight closure; if the doc
 // is missing or `policyWeightsTrainedOnGames < MIN_TRAINED_GAMES`, the engine
 // falls back to the hand-tuned defaults.
 
 import { passesQualityFilter } from './qualityFilter';
 import {
-  getAssimilatorState,
-  getAssimilatorUpdateTime,
-  setCachedAssimilatorState,
-  ASSIMILATOR_STATE_COLLECTION,
-  ASSIMILATOR_STATE_DOC_ID
+  getCuratorState,
+  getCuratorUpdateTime,
+  setCachedCuratorState,
+  CURATOR_STATE_COLLECTION,
+  CURATOR_STATE_DOC_ID
 } from './state';
 
 const PAGE_SIZE = 300;
@@ -29,7 +29,7 @@ const MAX_PAGES = 20;                     // 6,000 games max per run.
 const BT_ITERATIONS = 50;
 const LEARNING_RATE = 0.1;
 const MIN_TRAINED_GAMES = 100;            // Engine ignores learned weights below this.
-const PRIOR_WEIGHTS = { ownCoef: 3.0, oppCoef: 2.0 };  // The hand-tuned defaults.
+const PRIOR_WEIGHTS = { ownCoef: 6.0, oppCoef: 2.0 };  // The hand-tuned defaults (matches POLICY_DEFAULTS.heavy in aiEngine.js).
 const PRIOR_STRENGTH = 50;                // Pseudo-samples anchoring weights to prior — prevents wild swings on small data.
 
 function placementToIdx(p, size) {
@@ -212,12 +212,12 @@ async function streamFinishedGames(env, helpers, onGame) {
         })
       });
     } catch (err) {
-      console.error('[assimilator-learn] runQuery threw', err?.message);
+      console.error('[curator-learn] runQuery threw', err?.message);
       return totalSeen;
     }
     if (!response.ok) {
       const txt = await response.text();
-      console.error(`[assimilator-learn] runQuery ${response.status}: ${txt}`);
+      console.error(`[curator-learn] runQuery ${response.status}: ${txt}`);
       return totalSeen;
     }
     const rows = await response.json();
@@ -251,15 +251,15 @@ export async function runFeatureWeightLearning(env, helpers) {
   });
 
   if (samples.length === 0) {
-    console.log(`[assimilator-learn] no qualifying samples (saw ${totalGames} games) — skipping update`);
+    console.log(`[curator-learn] no qualifying samples (saw ${totalGames} games) — skipping update`);
     return { totalGames, qualifyingGames, samples: 0, updated: false };
   }
 
   let state;
   try {
-    state = await getAssimilatorState(env, getDocument, { forceFresh: true });
+    state = await getCuratorState(env, getDocument, { forceFresh: true });
   } catch (err) {
-    console.warn('[assimilator-learn] state read failed', err?.message);
+    console.warn('[curator-learn] state read failed', err?.message);
     return { totalGames, qualifyingGames, samples: samples.length, updated: false };
   }
 
@@ -288,18 +288,18 @@ export async function runFeatureWeightLearning(env, helpers) {
     updatedAt: new Date().toISOString()
   };
 
-  const updateTime = getAssimilatorUpdateTime();
+  const updateTime = getCuratorUpdateTime();
   try {
     const written = await writeDocument(
       env,
-      ASSIMILATOR_STATE_COLLECTION,
-      ASSIMILATOR_STATE_DOC_ID,
+      CURATOR_STATE_COLLECTION,
+      CURATOR_STATE_DOC_ID,
       nextState,
       updateTime || undefined
     );
-    setCachedAssimilatorState(nextState, written?.updateTime || null);
+    setCachedCuratorState(nextState, written?.updateTime || null);
   } catch (err) {
-    console.warn('[assimilator-learn] state write failed', err?.message);
+    console.warn('[curator-learn] state write failed', err?.message);
     return {
       totalGames,
       qualifyingGames,
@@ -311,7 +311,7 @@ export async function runFeatureWeightLearning(env, helpers) {
   }
 
   console.log(
-    `[assimilator-learn] updated weights: ownCoef=${weights.ownCoef.toFixed(3)} oppCoef=${weights.oppCoef.toFixed(3)} ` +
+    `[curator-learn] updated weights: ownCoef=${weights.ownCoef.toFixed(3)} oppCoef=${weights.oppCoef.toFixed(3)} ` +
     `(samples=${samples.length} qualifyingGames=${qualifyingGames}/${totalGames} nll=${lastNll.toFixed(4)})`
   );
 
@@ -325,5 +325,5 @@ export async function runFeatureWeightLearning(env, helpers) {
   };
 }
 
-export const ASSIMILATOR_LEARN_MIN_TRAINED_GAMES = MIN_TRAINED_GAMES;
-export const ASSIMILATOR_LEARN_PRIOR_WEIGHTS = PRIOR_WEIGHTS;
+export const CURATOR_LEARN_MIN_TRAINED_GAMES = MIN_TRAINED_GAMES;
+export const CURATOR_LEARN_PRIOR_WEIGHTS = PRIOR_WEIGHTS;

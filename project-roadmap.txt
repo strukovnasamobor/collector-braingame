@@ -3,12 +3,27 @@
 
 OFFLINE AND ONLINE AI TIERS
 1. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-2. Consolidator             { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-3. Predator                 { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+2. Conservator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+3. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 - Only in online games:
-4. Collector - Sakupljač    { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-5. Assimilator - Asimilator { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+4. Collector                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+5. Curator                  { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
                             + opening book + MAST table + feature-weight learning
+- policy:
+    - Confiscator   - attackHeavy:  { placeOwn: 1, placeOpp:  5, placeDead: -1, elimOwn: -1, elimOpp: 7 }, contests aggressively; weakest cluster-pull
+    - Conservator   - defenseHeavy: { placeOwn: 4, placeOpp: -2, placeDead: -3, elimOwn: -4, elimOpp: 2 }, actively avoids opponent contact; strong own-preservation
+    - Cumulator     - collectHeavy: { placeOwn: 5, placeOpp:  0, placeDead: -3, elimOwn: -4, elimOpp: 3 }, ignores opponent on placement; pure cluster-greed
+    - Collector     - heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 }, heaviest cluster-pull; balanced offense/defense
+    - Curator     - = Collector
+- formula
+    - PLACE phase:  weight = max(0.1, 1 + placeOwn·ownAdj  + placeOpp·oppAdj + placeDead·deadAdj)
+    - ELIM phase:   weight = max(0.1, 1 + elimOwn·ownAdj   + elimOpp·oppAdj)
+    - The features are simple counts of what's in the 8 neighbors of the candidate cell:
+        - ownAdj - number of your own dots adjacent
+        - oppAdj - number of opponent's dots adjacent
+        - deadAdj - number of dead (eliminated) cells adjacent
+- in standard game on 6x6 board Human is always playing first
+- in ranked game player with lower ranking plays first, if Human vs Bot is a tie Human is always playing first, if Human vs Human tie then random
 
 10 x 10 BOARD
 #	Word		    P	B	C/B	T

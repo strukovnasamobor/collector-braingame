@@ -9,11 +9,11 @@ export const isBotUid = (uid) => typeof uid === 'string' && uid.startsWith(BOT_U
 export const tierFromBotUid = (uid) => isBotUid(uid) ? uid.slice(BOT_UID_PREFIX.length) : null;
 
 export const BOT_DISPLAY = {
-  confiscator:  'Confiscator 🤖',
-  consolidator: 'Consolidator 🤖',
-  predator:     'Predator 🤖',
-  collector:    'Collector 🤖',
-  assimilator:  'Assimilator 🤖'
+  confiscator: 'Confiscator 🤖',
+  conservator: 'Conservator 🤖',
+  cumulator:   'Cumulator 🤖',
+  collector:   'Collector 🤖',
+  curator:     'Curator 🤖'
 };
 
 // All bots start at the same rating (1000) and let the live Elo system separate
@@ -22,11 +22,11 @@ export const BOT_DISPLAY = {
 // MCTS-RAVE engine and only differ in rollout policy / learning, the initial
 // strength gap is small enough that observed Elo is the right source of truth.
 export const BOT_INITIAL_RATING = {
-  confiscator:  1000,
-  consolidator: 1000,
-  predator:     1000,
-  collector:    1000,
-  assimilator:  1000
+  confiscator: 1000,
+  conservator: 1000,
+  cumulator:   1000,
+  collector:   1000,
+  curator:     1000
 };
 
 // Standard gridSizes that bots maintain queue presence for. Online play always

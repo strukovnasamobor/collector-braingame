@@ -1,6 +1,6 @@
-// Opening book for the Assimilator tier. Maps a state-hash → best placement
+// Opening book for the Curator tier. Maps a state-hash → best placement
 // move, plus per-entry win/loss/draw counters. Persisted in
-// assimilator/state.book[size]; consulted only during the place phase and
+// curator/state.book[size]; consulted only during the place phase and
 // only while total placements played so far is below MAX_PLACEMENTS.
 //
 // Key design: the book key is FNV-1a over (size, side, cells[]) — the

@@ -20,12 +20,12 @@ import {
   PW_ALPHA,
   WIN_MAG
 } from './aiTiers';
-import { buildBookKey, lookupBook } from './assimilator/openingBook';
-import { mastMultiplier } from './assimilator/mast';
+import { buildBookKey, lookupBook } from './curator/openingBook';
+import { mastMultiplier } from './curator/mast';
 
-// Engine ignores learned weights below this threshold; falls back to the
-// hand-tuned defaults from heavyWeight. Mirrors learn.js's MIN_TRAINED_GAMES.
-const ASSIMILATOR_MIN_TRAINED_GAMES = 100;
+// Engine ignores learned weights below this threshold; falls back to
+// POLICY_DEFAULTS.heavy. Mirrors learn.js's MIN_TRAINED_GAMES.
+const CURATOR_MIN_TRAINED_GAMES = 100;
 
 const PLACE = 0;
 const ELIMINATE = 1;
@@ -677,92 +677,77 @@ function runEndgame() {
 }
 
 // ── MCTS + RAVE + progressive widening (Advanced) ──────────────────────────
-// Rollout / move-ordering policy weights. Three variants are dispatched via
-// cfg.policy ('heavy' | 'collectHeavy' | 'attackHeavy'); a fourth path
-// 'light' bypasses weighting entirely (handled in pickWeighted/ensureUntried).
+// Rollout / move-ordering policy weights. All four named policies share the
+// same functional form; they differ only in the five SIGNED coefficients
+// applied to the (ownAdj, oppAdj, deadAdj) features. A fifth path 'light'
+// bypasses weighting entirely (handled in pickWeighted/ensureUntried).
+//
+//   place  weight = max(0.1, 1 + placeOwn·ownAdj  + placeOpp·oppAdj + placeDead·deadAdj)
+//   elim   weight = max(0.1, 1 + elimOwn·ownAdj   + elimOpp·oppAdj)
+//
+// Each policy ships hand-tuned defaults (POLICY_DEFAULTS below). Any individual
+// coefficient may be overridden per call via cfg fields of the same name —
+// this is how the Curator injects its learned ownCoef/oppCoef (mapped to
+// placeOwn/placeOpp), and how tools/ai_tune/tune.py sweep grid-searches the
+// weight space.
+//
+// Coefficient interpretation (signed; defaults reflect current hand-tuned
+// behaviour for each personality):
+//   placeOwn   — preference for placing next to own dots (cluster-building)
+//   placeOpp   — preference for placing next to opponent dots (contest/attack);
+//                NEGATIVE for defenseHeavy (avoid contact)
+//   placeDead  — penalty for placing next to dead cells (always negative)
+//   elimOwn    — preference (negative = aversion) for eliminating cells
+//                adjacent to own dots (own preservation when negative)
+//   elimOpp    — preference for eliminating cells adjacent to opponent dots
+//                (constrain opponent's growth when positive)
+const POLICY_DEFAULTS = {
+  heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 },
+  collectHeavy: { placeOwn: 5, placeOpp:  0, placeDead: -3, elimOwn: -4, elimOpp: 3 },
+  attackHeavy:  { placeOwn: 1, placeOpp:  5, placeDead: -1, elimOwn: -1, elimOpp: 7 },
+  defenseHeavy: { placeOwn: 4, placeOpp: -2, placeDead: -3, elimOwn: -4, elimOpp: 2 }
+};
 
-// Heavy: balanced offense + defense (default; tuned by hand).
-function heavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 3 * ownAdj + 2 * oppAdj - 2 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
+function readCoef(cfg, name, fallback) {
+  if (cfg && Number.isFinite(Number(cfg[name]))) return Number(cfg[name]);
+  return fallback;
 }
 
-// Collect-focused: prefer growing own group, ignore opponent on placement.
-// Eliminations stay anti-opponent but heavily avoid own-adjacent cells.
-function collectHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 5 * ownAdj - 3 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 3 * oppAdj - 4 * ownAdj);
-}
-
-// Attack-focused: contest opponent territory; eliminations maximize damage.
-function attackHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 1 * ownAdj + 5 * oppAdj - 1 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 7 * oppAdj - 1 * ownAdj);
-}
-
-// Defense-focused (Hoarder): build own group while actively avoiding opponent
-// contact. Distinct from collectHeavy: uses negative oppAdj weight to seek
-// isolated growth corridors. Eliminations: weak opp focus, strong own preserve.
-function defenseHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 4 * ownAdj - 2 * oppAdj - 3 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 2 * oppAdj - 4 * ownAdj);
-}
-
-// Assimilator: structurally identical to heavyWeight but the place-phase
-// own/opp coefficients are learned (loaded from
-// cfg.assimilatorState.policyWeights). Eliminate phase keeps the same hand-
-// tuned formula as heavyWeight — per-game ingestion only stores placements,
-// so we never have BT training signal for elim moves.
-function makeAssimilatorHeavyWeight(ownCoef, oppCoef) {
-  return function assimilatorHeavyWeight(idx, ph, who) {
+function makeWeightFn(coefs) {
+  const { placeOwn, placeOpp, placeDead, elimOwn, elimOpp } = coefs;
+  return function policyWeight(idx, ph, who) {
     const opp = who === 1 ? 2 : 1;
-    if (ph === PLACE) {
-      const ownAdj = countAdjacentDots(idx, who);
-      const oppAdj = countAdjacentDots(idx, opp);
-      const deadAdj = countAdjacentDead(idx);
-      return Math.max(0.1, 1 + ownCoef * ownAdj + oppCoef * oppAdj - 2 * deadAdj);
-    }
     const ownAdj = countAdjacentDots(idx, who);
     const oppAdj = countAdjacentDots(idx, opp);
-    return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
+    if (ph === PLACE) {
+      const deadAdj = countAdjacentDead(idx);
+      return Math.max(0.1, 1 + placeOwn * ownAdj + placeOpp * oppAdj + placeDead * deadAdj);
+    }
+    return Math.max(0.1, 1 + elimOwn * ownAdj + elimOpp * oppAdj);
   };
 }
 
-// Weighted random pick from `arr` of length `n`, weights via the dispatched
-// policy function (heavyWeight | collectHeavyWeight | attackHeavyWeight).
+function resolvePolicyName(policy) {
+  if (policy === 'collectHeavy' || policy === 'attackHeavy' || policy === 'defenseHeavy') return policy;
+  return 'heavy'; // default for 'heavy', 'light', or unspecified (light is gated separately)
+}
+
+function buildPolicyWeightFn(cfg) {
+  const policyName = resolvePolicyName(cfg && cfg.policy);
+  const defaults = POLICY_DEFAULTS[policyName];
+  return makeWeightFn({
+    placeOwn:  readCoef(cfg, 'placeOwn',  defaults.placeOwn),
+    placeOpp:  readCoef(cfg, 'placeOpp',  defaults.placeOpp),
+    placeDead: readCoef(cfg, 'placeDead', defaults.placeDead),
+    elimOwn:   readCoef(cfg, 'elimOwn',   defaults.elimOwn),
+    elimOpp:   readCoef(cfg, 'elimOpp',   defaults.elimOpp)
+  });
+}
+
+// Weighted random pick from `arr` of length `n`, weights via the parameterized
+// policy function built in buildPolicyWeightFn(cfg).
 // Under light policy (cfg.policy === 'light'), falls back to uniform random.
-// Assimilator (mastBlendActive=true) multiplies each candidate's policy weight
+// Curator (mastBlendActive=true) multiplies each candidate's policy weight
 // by mastMultiplier(...) ∈ ~[0.5, 1.5] using the cross-game MAST table.
 function pickWeighted(arr, n, ph, who) {
   if (lightPolicyEff) return arr[Math.floor(Math.random() * n)];
@@ -778,17 +763,17 @@ function pickWeighted(arr, n, ph, who) {
     }
     return arr[n - 1];
   }
-  // Assimilator MAST-blended path.
+  // Curator MAST-blended path.
   let total = 0;
   for (let i = 0; i < n; i++) {
     const base = w(arr[i], ph, who);
-    const factor = mastMultiplier(assimilatorMastForSize, who, ph, arr[i]);
+    const factor = mastMultiplier(curatorMastForSize, who, ph, arr[i]);
     total += base * factor;
   }
   let r = Math.random() * total;
   for (let i = 0; i < n; i++) {
     const base = w(arr[i], ph, who);
-    const factor = mastMultiplier(assimilatorMastForSize, who, ph, arr[i]);
+    const factor = mastMultiplier(curatorMastForSize, who, ph, arr[i]);
     r -= base * factor;
     if (r <= 0) return arr[i];
   }
@@ -953,7 +938,7 @@ function ensureUntried(node) {
   if (mastBlendActive) {
     for (let i = 0; i < n; i++) {
       const base = weightFnEff(buf[i], node.phase, node.toMove);
-      const factor = mastMultiplier(assimilatorMastForSize, node.toMove, node.phase, buf[i]);
+      const factor = mastMultiplier(curatorMastForSize, node.toMove, node.phase, buf[i]);
       scoreBuf[i] = Math.round(base * factor * 1000) | 0;
     }
   } else {
@@ -990,15 +975,15 @@ let rolloutShortcutEff = false;
 // generator's natural index order — i.e. no policy bias at all. Set per-call
 // from cfg.policy === 'light'.
 let lightPolicyEff = false;
-// Active weight function for non-light policies. Dispatched per-call from
-// cfg.policy ∈ {'heavy' (default), 'collectHeavy', 'attackHeavy'}.
-let weightFnEff = heavyWeight;
+// Active weight function for non-light policies. Built per-call by
+// buildPolicyWeightFn(cfg) from POLICY_DEFAULTS + any per-call overrides.
+let weightFnEff = makeWeightFn(POLICY_DEFAULTS.heavy);
 
-// Assimilator-tier per-search state. Set in runMCTSRave when the worker
-// passes cfg.assimilatorState; null otherwise. The MAST blend in pickWeighted
-// / ensureUntried is gated on `mastBlendActive` so non-Assimilator searches
+// Curator-tier per-search state. Set in runMCTSRave when the worker
+// passes cfg.curatorState; null otherwise. The MAST blend in pickWeighted
+// / ensureUntried is gated on `mastBlendActive` so non-Curator searches
 // keep the original fast path with no extra per-move multiplications.
-let assimilatorMastForSize = null;
+let curatorMastForSize = null;
 let mastBlendActive = false;
 
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
@@ -1219,34 +1204,41 @@ async function runMCTSRave(cfg) {
   pwAlphaEff = Number.isFinite(Number(cfg.pwAlpha)) ? Number(cfg.pwAlpha) : PW_ALPHA;
   rolloutShortcutEff = !!cfg.rolloutShortcut;
   lightPolicyEff = cfg.policy === 'light';
-  if (cfg.policy === 'collectHeavy') weightFnEff = collectHeavyWeight;
-  else if (cfg.policy === 'attackHeavy') weightFnEff = attackHeavyWeight;
-  else if (cfg.policy === 'defenseHeavy') weightFnEff = defenseHeavyWeight;
-  else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
 
-  // Assimilator hookup. Only takes effect when the worker injected
-  // cfg.assimilatorState (via chooseAIMove). Non-Assimilator searches leave
-  // these globals at null/false so all the existing fast paths run unchanged.
-  assimilatorMastForSize = null;
+  // Curator hookup: when the worker injected cfg.curatorState and the
+  // BT learner has accumulated enough trained games, splice the learned
+  // ownCoef/oppCoef into cfg as placeOwn/placeOpp overrides. This unifies the
+  // Curator path with the parameterized weight system — the same builder
+  // handles every named policy. Eliminate-phase weights stay at heavy's
+  // defaults because per-game ingestion only stores placements.
+  curatorMastForSize = null;
   mastBlendActive = false;
-  if (cfg.tier === 'assimilator' && cfg.assimilatorState) {
-    const ast = cfg.assimilatorState;
+  let cfgForWeights = cfg;
+  if (cfg.tier === 'curator' && cfg.curatorState) {
+    const ast = cfg.curatorState;
     if (ast.policyWeights
         && Number.isFinite(Number(ast.policyWeights.ownCoef))
         && Number.isFinite(Number(ast.policyWeights.oppCoef))
-        && (Number(ast.policyWeightsTrainedOnGames) || 0) >= ASSIMILATOR_MIN_TRAINED_GAMES) {
-      weightFnEff = makeAssimilatorHeavyWeight(
-        Number(ast.policyWeights.ownCoef),
-        Number(ast.policyWeights.oppCoef)
-      );
+        && (Number(ast.policyWeightsTrainedOnGames) || 0) >= CURATOR_MIN_TRAINED_GAMES) {
+      cfgForWeights = {
+        ...cfg,
+        placeOwn: Number(ast.policyWeights.ownCoef),
+        placeOpp: Number(ast.policyWeights.oppCoef)
+      };
     }
     const sizeKey = String(size);
     const mastBucket = ast.mast && ast.mast[sizeKey] ? ast.mast[sizeKey] : null;
     if (mastBucket && Object.keys(mastBucket).length > 0) {
-      assimilatorMastForSize = mastBucket;
+      curatorMastForSize = mastBucket;
       mastBlendActive = true;
     }
   }
+  // Build the parameterized weight function once per call. POLICY_DEFAULTS
+  // supplies the personality's hand-tuned coefficients; cfg.{placeOwn,
+  // placeOpp, placeDead, elimOwn, elimOpp} fields override individually
+  // (used by the Curator path above and by tools/ai_tune sweeps).
+  // Light policy bypasses the weight function entirely in pickWeighted.
+  weightFnEff = buildPolicyWeightFn(cfgForWeights);
 
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
   // is set and we have a saved snapshot from the previous call.
@@ -1348,7 +1340,7 @@ function countEmpty() {
 
 // Total placements made so far (both sides). Eliminations don't change cells —
 // they only flip the dead bitmap on previously-empty squares — so cells > 0
-// is a clean count of placements. Used to gate the Assimilator opening book
+// is a clean count of placements. Used to gate the Curator opening book
 // (book entries only apply to the first OPENING_BOOK_MAX_PLACEMENTS plies).
 function countPlacements() {
   let n = 0;
@@ -1379,13 +1371,13 @@ async function chooseMove(cfg) {
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {
-    // Assimilator opening-book hit: short-circuit MCTS entirely for early-game
+    // Curator opening-book hit: short-circuit MCTS entirely for early-game
     // place phase if we have a high-confidence cached move. The book key
     // ignores the `dead` bitmap (see openingBook.js), so we re-validate that
     // the cached move is still legal in the exact current position before
     // returning it.
-    if (cfg.tier === 'assimilator' && cfg.assimilatorState && phase === PLACE) {
-      const ast = cfg.assimilatorState;
+    if (cfg.tier === 'curator' && cfg.curatorState && phase === PLACE) {
+      const ast = cfg.curatorState;
       const sizeKey = String(size);
       const bookForSize = ast.book && ast.book[sizeKey];
       if (bookForSize) {
@@ -1400,7 +1392,7 @@ async function chooseMove(cfg) {
           // mis-identify the played move and silently fall back anyway, but
           // explicit discard is cheaper.
           if (cfg.reuseTree) discardReuseSnapshot();
-          console.log(`[aiEngine:assimilator] BOOK HIT — key=${key} ply=${placementCount} → move=${bookMove}`);
+          console.log(`[aiEngine:curator] BOOK HIT — key=${key} ply=${placementCount} → move=${bookMove}`);
           return bookMove;
         }
       }
@@ -1472,18 +1464,18 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
 // (cfg.timeMs) is enforceable on Cloudflare Workers, where Date.now() is
 // frozen during synchronous JS. Returns Promise<{ row, col } | null>.
 //
-// `assimilatorState` is optional — only the worker (with Firestore access)
+// `curatorState` is optional — only the worker (with Firestore access)
 // passes it. When omitted, the engine ignores the book / MAST / learned-weight
-// hooks and behaves identically to the corresponding non-Assimilator tier
-// (i.e., Assimilator falls back to plain `heavy` policy). The browser engine
+// hooks and behaves identically to the corresponding non-Curator tier
+// (i.e., Curator falls back to plain `heavy` policy). The browser engine
 // always omits it, which is why the offline UI doesn't list the tier.
-export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer, assimilatorState }) {
+export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer, curatorState }) {
   const baseCfg = AI_TIERS[tier];
   if (!baseCfg) return null;
   // Per-call cfg surfaces tier name (so chooseMove / runMCTSRave can branch
-  // on cfg.tier) and the optional Assimilator state.
-  const cfg = assimilatorState
-    ? { ...baseCfg, tier, assimilatorState }
+  // on cfg.tier) and the optional Curator state.
+  const cfg = curatorState
+    ? { ...baseCfg, tier, curatorState }
     : { ...baseCfg, tier };
   initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer);
   const moveIdx = await chooseMove(cfg);

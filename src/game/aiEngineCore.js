@@ -671,78 +671,75 @@ function runEndgame() {
 }
 
 // ── MCTS + RAVE + progressive widening (Advanced) ──────────────────────────
-// Rollout / move-ordering policy weights. Three variants are dispatched via
-// cfg.policy ('heavy' | 'collectHeavy' | 'attackHeavy'); a fourth path
-// 'light' bypasses weighting entirely (handled in pickWeighted/ensureUntried).
+// Rollout / move-ordering policy weights. All four named policies share the
+// same functional form; they differ only in the five SIGNED coefficients
+// applied to the (ownAdj, oppAdj, deadAdj) features. A fifth path 'light'
+// bypasses weighting entirely (handled in pickWeighted/ensureUntried).
 //
-// Each function takes (cellIdx, phase, mover_side) and returns a positive
-// weight. Higher = the move is more likely to be chosen by the rollout policy
-// AND expanded earlier by progressive widening at MCTS internal nodes.
+//   place  weight = max(0.1, 1 + placeOwn·ownAdj  + placeOpp·oppAdj + placeDead·deadAdj)
+//   elim   weight = max(0.1, 1 + elimOwn·ownAdj   + elimOpp·oppAdj)
+//
+// Each policy ships hand-tuned defaults (POLICY_DEFAULTS below). Any individual
+// coefficient may be overridden per call via cfg fields of the same name —
+// `cfg.placeOpp = 6` swaps in a 6 for placeOpp without touching the others. The
+// tournament harness (tools/ai_tune/tune.py sweep) uses this directly to grid-
+// search the weight space.
+//
+// Coefficient interpretation (signed; defaults reflect current hand-tuned
+// behaviour for each personality):
+//   placeOwn   — preference for placing next to own dots (cluster-building)
+//   placeOpp   — preference for placing next to opponent dots (contest/attack);
+//                NEGATIVE for defenseHeavy (avoid contact)
+//   placeDead  — penalty for placing next to dead cells (always negative)
+//   elimOwn    — preference (negative = aversion) for eliminating cells
+//                adjacent to own dots (own preservation when negative)
+//   elimOpp    — preference for eliminating cells adjacent to opponent dots
+//                (constrain opponent's growth when positive)
+const POLICY_DEFAULTS = {
+  heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 },
+  collectHeavy: { placeOwn: 5, placeOpp:  0, placeDead: -3, elimOwn: -4, elimOpp: 3 },
+  attackHeavy:  { placeOwn: 1, placeOpp:  5, placeDead: -1, elimOwn: -1, elimOpp: 7 },
+  defenseHeavy: { placeOwn: 4, placeOpp: -2, placeDead: -3, elimOwn: -4, elimOpp: 2 }
+};
 
-// Heavy: balanced offense + defense (current default; tuned by hand).
-function heavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
+function readCoef(cfg, name, fallback) {
+  if (cfg && Number.isFinite(Number(cfg[name]))) return Number(cfg[name]);
+  return fallback;
+}
+
+function makeWeightFn(coefs) {
+  const { placeOwn, placeOpp, placeDead, elimOwn, elimOpp } = coefs;
+  return function policyWeight(idx, ph, who) {
+    const opp = who === 1 ? 2 : 1;
     const ownAdj = countAdjacentDots(idx, who);
     const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 3 * ownAdj + 2 * oppAdj - 2 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 4 * oppAdj - 2 * ownAdj);
+    if (ph === PLACE) {
+      const deadAdj = countAdjacentDead(idx);
+      return Math.max(0.1, 1 + placeOwn * ownAdj + placeOpp * oppAdj + placeDead * deadAdj);
+    }
+    return Math.max(0.1, 1 + elimOwn * ownAdj + elimOpp * oppAdj);
+  };
 }
 
-// Collect-focused: strongly prefer growing own group, mostly ignore the
-// opponent's structure when placing. When eliminating, avoid cells adjacent to
-// own group (don't sacrifice own potential adjacency for an attack).
-function collectHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 5 * ownAdj - 3 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 3 * oppAdj - 4 * ownAdj);
+function resolvePolicyName(policy) {
+  if (policy === 'collectHeavy' || policy === 'attackHeavy' || policy === 'defenseHeavy') return policy;
+  return 'heavy'; // default for 'heavy', 'light', or unspecified (light is gated separately)
 }
 
-// Attack-focused: contest opponent territory aggressively. Placements adjacent
-// to opponent dots are prioritised; eliminations heavily favour cells adjacent
-// to opponent's group to constrain its growth.
-function attackHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 1 * ownAdj + 5 * oppAdj - 1 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 7 * oppAdj - 1 * ownAdj);
+function buildPolicyWeightFn(cfg) {
+  const policyName = resolvePolicyName(cfg && cfg.policy);
+  const defaults = POLICY_DEFAULTS[policyName];
+  return makeWeightFn({
+    placeOwn:  readCoef(cfg, 'placeOwn',  defaults.placeOwn),
+    placeOpp:  readCoef(cfg, 'placeOpp',  defaults.placeOpp),
+    placeDead: readCoef(cfg, 'placeDead', defaults.placeDead),
+    elimOwn:   readCoef(cfg, 'elimOwn',   defaults.elimOwn),
+    elimOpp:   readCoef(cfg, 'elimOpp',   defaults.elimOpp)
+  });
 }
 
-// Defense-focused (Hoarder): build own group while *actively avoiding* opponent
-// contact. Distinct from collectHeavy (which is neutral on oppAdj) — defense
-// uses a negative oppAdj weight to seek isolated growth corridors. Eliminations
-// are conservative: weak opp focus, strong own preservation.
-function defenseHeavyWeight(idx, ph, who) {
-  const opp = who === 1 ? 2 : 1;
-  if (ph === PLACE) {
-    const ownAdj = countAdjacentDots(idx, who);
-    const oppAdj = countAdjacentDots(idx, opp);
-    const deadAdj = countAdjacentDead(idx);
-    return Math.max(0.1, 1 + 4 * ownAdj - 2 * oppAdj - 3 * deadAdj);
-  }
-  const ownAdj = countAdjacentDots(idx, who);
-  const oppAdj = countAdjacentDots(idx, opp);
-  return Math.max(0.1, 1 + 2 * oppAdj - 4 * ownAdj);
-}
-
-// Weighted random pick from `arr` of length `n`, weights via the dispatched
-// policy function (heavyWeight | collectHeavyWeight | attackHeavyWeight).
+// Weighted random pick from `arr` of length `n`, weights via the parameterized
+// policy function built in buildPolicyWeightFn(cfg).
 // Under light policy (cfg.policy === 'light'), falls back to uniform random.
 function pickWeighted(arr, n, ph, who) {
   if (lightPolicyEff) return arr[Math.floor(Math.random() * n)];
@@ -945,9 +942,9 @@ let rolloutShortcutEff = false;
 // generator's natural index order — i.e. no policy bias at all. Set per-call
 // from cfg.policy === 'light'.
 let lightPolicyEff = false;
-// Active weight function for non-light policies. Dispatched per-call from
-// cfg.policy ∈ {'heavy' (default), 'collectHeavy', 'attackHeavy'}.
-let weightFnEff = heavyWeight;
+// Active weight function for non-light policies. Built per-call by
+// buildPolicyWeightFn(cfg) from POLICY_DEFAULTS + any per-call overrides.
+let weightFnEff = makeWeightFn(POLICY_DEFAULTS.heavy);
 
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
 let amafScore = null;
@@ -1168,10 +1165,11 @@ async function runMCTSRave(cfg) {
   pwAlphaEff = Number.isFinite(Number(cfg.pwAlpha)) ? Number(cfg.pwAlpha) : PW_ALPHA;
   rolloutShortcutEff = !!cfg.rolloutShortcut;
   lightPolicyEff = cfg.policy === 'light';
-  if (cfg.policy === 'collectHeavy') weightFnEff = collectHeavyWeight;
-  else if (cfg.policy === 'attackHeavy') weightFnEff = attackHeavyWeight;
-  else if (cfg.policy === 'defenseHeavy') weightFnEff = defenseHeavyWeight;
-  else weightFnEff = heavyWeight; // 'heavy' (default), 'light', or unspecified
+  // Build the parameterized weight function once per call. POLICY_DEFAULTS
+  // supplies the personality's hand-tuned coefficients; any cfg.{placeOwn,
+  // placeOpp, placeDead, elimOwn, elimOpp} field overrides individually.
+  // (Light policy bypasses the weight function entirely in pickWeighted.)
+  weightFnEff = buildPolicyWeightFn(cfg);
 
   // tree-reuse: try to inherit the previous search's tree if cfg.reuseTree
   // is set and we have a saved snapshot from the previous call.

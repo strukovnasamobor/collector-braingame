@@ -280,8 +280,12 @@ def elo_diff(win_rate):
 
 # ── Tournament ─────────────────────────────────────────────────────────────
 
-def run_pair(cfg_a, cfg_b, size, n_games, n_workers, name_a='A', name_b='B', verbose=True):
-    """Play n_games between A and B, alternating sides each game.
+def run_pair(cfg_a, cfg_b, size, n_games, n_workers, name_a='A', name_b='B',
+             verbose=True, switch_sides=True):
+    """Play n_games between A and B.
+    switch_sides controls whether sides alternate between games:
+      True  — half the games A is player 1, half player 2 (default; balanced).
+      False — A is always player 1; B is always player 2.
     Returns dict with results.
     """
     n_workers = max(1, min(n_workers, n_games))
@@ -310,7 +314,10 @@ def run_pair(cfg_a, cfg_b, size, n_games, n_workers, name_a='A', name_b='B', ver
                     game_idx = job_q.get_nowait()
                 except queue.Empty:
                     return
-                swap = (game_idx % 2 == 1)
+                if switch_sides:
+                    swap = (game_idx % 2 == 1)  # alternate
+                else:
+                    swap = False  # A always player 1
                 try:
                     r = play_game(eng, cfg_a, cfg_b, size, swap=swap)
                 except Exception as e:
@@ -399,6 +406,26 @@ def load_config(name):
         sys.exit(2)
     return json.loads(p.read_text())
 
+def parse_size_list(s):
+    """--size accepts a single int (`8`) or a comma list (`6,8,10`).
+    Returns a list of ints. Used by the pair subcommand.
+    """
+    sizes = []
+    for tok in str(s).split(','):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            n = int(tok)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f'size {tok!r} is not an integer')
+        if n < 4 or n > 14:
+            raise argparse.ArgumentTypeError(f'size {n} out of range (4..14)')
+        sizes.append(n)
+    if not sizes:
+        raise argparse.ArgumentTypeError('--size must list at least one value')
+    return sizes
+
 def parse_values(s):
     out = []
     for v in s.split(','):
@@ -426,9 +453,14 @@ def main():
     pair = sub.add_parser('pair', help='Head-to-head: A vs B over N games.')
     pair.add_argument('--a', default='collector', help='Config name for A (default: collector)')
     pair.add_argument('--b', default='hunter', help='Config name for B (default: hunter)')
-    pair.add_argument('--size', type=int, default=8)
+    pair.add_argument('--size', type=parse_size_list, default=[8],
+                      help='Single board size (`8`) or comma-list (`6,8,10`). '
+                           'Each size plays --games games. Default: 8.')
     pair.add_argument('--games', type=int, default=100)
     pair.add_argument('--workers', type=int, default=os.cpu_count() or 4)
+    pair.add_argument('--switch', choices=['true', 'false'], default='true',
+                      help='true (default) — alternate sides each game (balanced); '
+                           'false — A always plays first.')
 
     sw = sub.add_parser('sweep', help='Sweep one parameter; each variant plays vs --opp.')
     sw.add_argument('--base', default='collector', help='Base config to mutate.')
@@ -445,8 +477,26 @@ def main():
     if args.cmd == 'pair':
         cfg_a = load_config(args.a)
         cfg_b = load_config(args.b)
-        run_pair(cfg_a, cfg_b, args.size, args.games, args.workers,
-                 name_a=args.a, name_b=args.b)
+        switch_sides = (args.switch == 'true')
+        rows = []
+        for sz in args.size:
+            if len(args.size) > 1:
+                print(f'\n=== {args.a} vs {args.b} (size {sz}, {args.games} games) ===')
+            r = run_pair(cfg_a, cfg_b, sz, args.games, args.workers,
+                         name_a=args.a, name_b=args.b, switch_sides=switch_sides)
+            r['size'] = sz
+            rows.append(r)
+        if len(args.size) > 1:
+            print('\n' + '=' * 70)
+            print(f'Multi-size summary: {args.a} vs {args.b}  '
+                  f'(switch={args.switch}, {args.games} games per size)')
+            print('=' * 70)
+            print(f'{"size":>6} | A wins | B wins | draws | score%   95% CI       | Elo')
+            print('-' * 70)
+            for r in rows:
+                print(f'{r["size"]:>6} | {r["wins_a"]:>6} | {r["wins_b"]:>6} | {r["draws"]:>5} | '
+                      f'{r["score"]*100:>5.1f}   [{r["ci_lo"]*100:>4.1f},{r["ci_hi"]*100:>4.1f}] | '
+                      f'{r["elo"]:+5.0f}')
     elif args.cmd == 'sweep':
         base = load_config(args.base)
         opp = load_config(args.opp)

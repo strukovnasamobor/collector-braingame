@@ -198,16 +198,25 @@
   border: 1px solid var(--sk-cell-border);
 }
 
+/* The whole unlock list shares one CSS grid so columns line up across rows:
+ * label | coin icon | price | UNLOCK button. Each row and each CoinBalance
+ * inside it `display: contents` so their children flow into this parent grid
+ * — that's what keeps icons-below-icons and prices-below-prices aligned even
+ * when prices have different digit counts. */
 .sk-grid-unlocks {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  align-items: center;
+  justify-content: center;
+  column-gap: 14px;
+  row-gap: 6px;
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px dashed var(--sk-cell-border);
 }
 
 .sk-grid-unlocks-title {
+  grid-column: 1 / -1;
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 4px;
@@ -215,22 +224,19 @@
   opacity: 0.85;
 }
 
-.sk-grid-unlock-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  align-items: center;
-  gap: 8px;
-}
-
-.sk-grid-unlock-row > * {
-  justify-self: center;
+.sk-grid-unlock-row,
+.sk-grid-unlock-row .sk-coin-balance {
+  display: contents;
 }
 
 .sk-grid-unlock-row .sk-grid-unlock-label {
   font-weight: 600;
 }
 
-.sk-grid-unlock-row .sk-coin-balance {
+/* Centre each amount within its (auto-sized) column so 1.000 and 10.000 sit
+ * on the same vertical axis below the coin icon column. */
+.sk-grid-unlock-row .sk-coin-count {
+  justify-self: center;
   font-size: 0.95rem;
 }
 

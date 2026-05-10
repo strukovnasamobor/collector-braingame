@@ -14,11 +14,11 @@
 
 import { ALL_TIERS, BOT_DISPLAY, BOT_INITIAL_RATING, botUidFor } from '../ai/bots';
 import {
-  getAssimilatorState,
-  setCachedAssimilatorState,
-  ASSIMILATOR_STATE_COLLECTION,
-  ASSIMILATOR_STATE_DOC_ID
-} from '../ai/assimilator/state';
+  getCuratorState,
+  setCachedCuratorState,
+  CURATOR_STATE_COLLECTION,
+  CURATOR_STATE_DOC_ID
+} from '../ai/curator/state';
 
 const DEFAULT_SIGMA = 500;
 const DISPLAY_DIVISOR = 2485;
@@ -43,14 +43,14 @@ export async function ensureBotProfilesOnce(env, helpers) {
   // hoarder=1700, collector=1900 to encode expected strength; v1.0 flattens
   // every tier to BOT_INITIAL_RATING (1000) and lets the live Elo system
   // separate them through play. The reset is idempotent — it's gated on the
-  // `botRatingsResetAt` field of `assimilator/state`. Once set, the
+  // `botRatingsResetAt` field of `curator/state`. Once set, the
   // migration never re-runs on any isolate.
   let needsRatingReset = false;
   try {
-    const state = await getAssimilatorState(env, getDocument);
+    const state = await getCuratorState(env, getDocument);
     needsRatingReset = !state.botRatingsResetAt;
   } catch (err) {
-    console.warn('[seedBots] assimilator state read failed; skipping rating reset', err?.message);
+    console.warn('[seedBots] curator state read failed; skipping rating reset', err?.message);
   }
 
   for (const tier of ALL_TIERS) {
@@ -115,15 +115,15 @@ export async function ensureBotProfilesOnce(env, helpers) {
   // cold isolate re-runs an already-idempotent reset.
   if (needsRatingReset) {
     try {
-      const state = await getAssimilatorState(env, getDocument);
+      const state = await getCuratorState(env, getDocument);
       const next = { ...state, botRatingsResetAt: nowIso, updatedAt: nowIso };
       const written = await writeDocument(
         env,
-        ASSIMILATOR_STATE_COLLECTION,
-        ASSIMILATOR_STATE_DOC_ID,
+        CURATOR_STATE_COLLECTION,
+        CURATOR_STATE_DOC_ID,
         next
       );
-      setCachedAssimilatorState(next, written?.updateTime || null);
+      setCachedCuratorState(next, written?.updateTime || null);
     } catch (err) {
       console.warn('[seedBots] failed to mark botRatingsResetAt', err?.message);
     }

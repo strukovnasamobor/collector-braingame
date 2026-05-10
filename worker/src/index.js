@@ -13,9 +13,9 @@ import {
   rankedBotQueueDocId
 } from './ai/bots';
 import { getBotProfile, invalidateBotProfile } from './ai/botProfileCache';
-import { ingestFinishedGame } from './ai/assimilator/flush';
-import { getAssimilatorState } from './ai/assimilator/state';
-import { runFeatureWeightLearning } from './ai/assimilator/learn';
+import { ingestFinishedGame } from './ai/curator/flush';
+import { getCuratorState } from './ai/curator/state';
+import { runFeatureWeightLearning } from './ai/curator/learn';
 
 const FIREBASE_CERTS_URL = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 const FIREBASE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -1357,14 +1357,40 @@ async function handleMatchmakingAction(env, authUser, body) {
       }
     }
 
-    // P1/P2 assignment: randomised in all cases. For human vs bot, 50/50 coin
-    // flip. For human vs human, arrival order is a sufficient proxy for
-    // randomness (unpredictable in practice), with lex-uid as tiebreak.
-    const selfJoined = liveSelf.data.joinedAtMs || 0;
-    const opponentJoined = liveCandidate.joinedAtMs || 0;
-    const selfIsP1 = candidateIsBot
-      ? (Math.random() < 0.5)
-      : (selfJoined < opponentJoined || (selfJoined === opponentJoined && authUser.uid < candidateUid));
+    // P1/P2 assignment.
+    //
+    //   Ranked: lower rating gets P1 (small first-move edge for the underdog).
+    //           Tie + bot opponent  -> human is P1.
+    //           Tie + human opponent -> random 50/50.
+    //
+    //   Standard, 6×6 vs bot: human is always P1 (the 6×6 is the entry-level
+    //           board and gets the human-friendly default).
+    //   Standard, any other shape: random 50/50.
+    //
+    // The leader-uid race protection above guarantees Math.random() only
+    // runs on one side per match, so both clients see the same outcome via
+    // the Firestore snapshot.
+    let selfIsP1;
+    if (mode === 'ranked') {
+      const selfRating = Number(liveSelf.data.rating || DEFAULT_DISPLAY_RATING);
+      const oppRating = Number(liveCandidate.rating || DEFAULT_DISPLAY_RATING);
+      if (selfRating < oppRating) {
+        selfIsP1 = true;
+      } else if (selfRating > oppRating) {
+        selfIsP1 = false;
+      } else if (candidateIsBot) {
+        selfIsP1 = true;
+      } else {
+        selfIsP1 = Math.random() < 0.5;
+      }
+    } else {
+      const selfGrid = Number(liveSelf.data.gridSize) || 6;
+      if (candidateIsBot && selfGrid === 6) {
+        selfIsP1 = true;
+      } else {
+        selfIsP1 = Math.random() < 0.5;
+      }
+    }
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
 
@@ -1642,9 +1668,9 @@ async function finalizeMatchCleanup(env, game) {
   const mode = normalizeMode(game.mode);
   const queueCollection = matchmakingCollection(mode);
   const uids = [game.player1uid, game.player2uid].filter(Boolean);
-  // Per-uid cleanup runs in parallel with the Assimilator ingest — they
+  // Per-uid cleanup runs in parallel with the Curator ingest — they
   // touch disjoint Firestore collections (matchmakingQueue_*/players vs.
-  // assimilator/state) so there's no contention. Ingest is best-effort
+  // curator/state) so there's no contention. Ingest is best-effort
   // and never throws to the caller; quality-filter rejections are silent.
   await Promise.all([
     ...uids.map(async (uid) => {
@@ -1659,7 +1685,7 @@ async function finalizeMatchCleanup(env, game) {
       try { await setPlayerState(env, uid, 'idle'); } catch (_) {}
     }),
     ingestFinishedGame(env, { getDocument, writeDocument }, game).catch((err) => {
-      console.warn('[finalizeMatchCleanup] assimilator ingest threw', err?.message);
+      console.warn('[finalizeMatchCleanup] curator ingest threw', err?.message);
     })
   ]);
 }
@@ -2603,15 +2629,15 @@ export class MatchBot {
     const size = parseGridSize(game.data.gridSize);
     const state = normalizeGameState(game.data.gameStateJSON, size);
 
-    // Assimilator: pull the cached learning state (book + MAST + learned
+    // Curator: pull the cached learning state (book + MAST + learned
     // weights). One Firestore read per cold isolate; subsequent alarms reuse
-    // the in-memory cache. Non-Assimilator tiers skip the read entirely.
-    let assimilatorState = null;
-    if (cfg.tier === 'assimilator') {
+    // the in-memory cache. Non-Curator tiers skip the read entirely.
+    let curatorState = null;
+    if (cfg.tier === 'curator') {
       try {
-        assimilatorState = await getAssimilatorState(this.env, getDocument);
+        curatorState = await getCuratorState(this.env, getDocument);
       } catch (err) {
-        console.warn(`${tag} assimilator state read failed:`, err?.message);
+        console.warn(`${tag} curator state read failed:`, err?.message);
       }
     }
 
@@ -2626,7 +2652,7 @@ export class MatchBot {
         phase: game.data.phase,
         lastPlaces: game.data.lastPlaces,
         currentPlayer: cfg.botPlayerNumber,
-        assimilatorState
+        curatorState
       });
     } catch (err) {
       searchError = err;
@@ -2678,7 +2704,7 @@ export default {
     // purge stay independent. event.cron is the literal pattern from
     // wrangler.toml that triggered this invocation.
     if (event.cron === '0 0 * * SAT') {
-      // Saturday 00:00 UTC: chain the Assimilator weight learner BEFORE
+      // Saturday 00:00 UTC: chain the Curator weight learner BEFORE
       // purgeOldGames so the BT update sees the games we're about to delete.
       // Errors in either step are isolated — one's failure mustn't skip the
       // other. Both wall-time-bounded (≤30 s combined under Free plan).

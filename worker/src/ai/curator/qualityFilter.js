@@ -1,4 +1,4 @@
-// Shared quality gate for Assimilator training data. Used by both per-game
+// Shared quality gate for Curator training data. Used by both per-game
 // ingestion (finalizeMatchCleanup → recordBookEntry / recordMastSamples) and
 // the weekly Bradley-Terry weight learner. Single source of truth: when these
 // thresholds change, both paths follow.

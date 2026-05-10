@@ -1,9 +1,9 @@
-// Cross-game MAST (Move-Average Sampling Technique) for the Assimilator tier.
+// Cross-game MAST (Move-Average Sampling Technique) for the Curator tier.
 // Distinct from the per-search AMAF/RAVE tables in aiEngine.js — those reset
 // every chooseAIMove call and live entirely in the search; the MAST here is
 // state-independent and accumulates across thousands of finished games.
 //
-// Schema (in `assimilator/state.mast[size]`):
+// Schema (in `curator/state.mast[size]`):
 //   key: `${side}_${phase}_${moveIdx}`  — e.g. "1_0_27" = P1's place at idx 27
 //   val: { sum: <Float>, n: <Int> }     — sum of signed outcomes, sample count
 //

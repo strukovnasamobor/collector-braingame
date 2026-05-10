@@ -1,7 +1,7 @@
 // Per-game ingestion path. Hooked into finalizeMatchCleanup; runs for every
 // game that ends, regardless of who played. Quality-filters the game, replays
 // the placement history to derive book + MAST samples, mutates the cached
-// `assimilator/state` doc, and writes it back to Firestore with an updateTime
+// `curator/state` doc, and writes it back to Firestore with an updateTime
 // precondition. On precondition conflict (a concurrent writer beat us to the
 // punch) we retry exactly once with a fresh read; further conflicts are
 // dropped — the weekly learn job rebuilds policy weights from scratch
@@ -9,12 +9,12 @@
 // subrequests on.
 
 import {
-  getAssimilatorState,
-  getAssimilatorUpdateTime,
-  invalidateAssimilatorState,
-  setCachedAssimilatorState,
-  ASSIMILATOR_STATE_COLLECTION,
-  ASSIMILATOR_STATE_DOC_ID
+  getCuratorState,
+  getCuratorUpdateTime,
+  invalidateCuratorState,
+  setCachedCuratorState,
+  CURATOR_STATE_COLLECTION,
+  CURATOR_STATE_DOC_ID
 } from './state';
 import { qualityFilterRejection } from './qualityFilter';
 import {
@@ -105,9 +105,9 @@ export async function ingestFinishedGame(env, helpers, game) {
   for (let attempt = 0; attempt < 2; attempt++) {
     let state;
     try {
-      state = await getAssimilatorState(env, getDocument, { forceFresh: attempt > 0 });
+      state = await getCuratorState(env, getDocument, { forceFresh: attempt > 0 });
     } catch (err) {
-      console.warn('[assimilator-ingest] state read failed', err?.message);
+      console.warn('[curator-ingest] state read failed', err?.message);
       return { ingested: false, reason: 'state-read-failed' };
     }
     if (!state.book) state.book = {};
@@ -131,18 +131,18 @@ export async function ingestFinishedGame(env, helpers, game) {
       updatedAt: new Date().toISOString()
     };
 
-    const updateTime = getAssimilatorUpdateTime();
+    const updateTime = getCuratorUpdateTime();
     try {
       const written = await writeDocument(
         env,
-        ASSIMILATOR_STATE_COLLECTION,
-        ASSIMILATOR_STATE_DOC_ID,
+        CURATOR_STATE_COLLECTION,
+        CURATOR_STATE_DOC_ID,
         nextState,
         updateTime || undefined
       );
-      setCachedAssimilatorState(nextState, written?.updateTime || null);
+      setCachedCuratorState(nextState, written?.updateTime || null);
       console.log(
-        `[assimilator-ingest] passed quality filter — recorded ${bookSamples.length} book / ${mastSamples.length} MAST samples (size ${sizeKey})`
+        `[curator-ingest] passed quality filter — recorded ${bookSamples.length} book / ${mastSamples.length} MAST samples (size ${sizeKey})`
       );
       return { ingested: true, bookSamples: bookSamples.length, mastSamples: mastSamples.length };
     } catch (err) {
@@ -151,10 +151,10 @@ export async function ingestFinishedGame(env, helpers, game) {
       // a fresh read so the next attempt's nextState is built off the latest
       // committed snapshot.
       if (attempt === 0 && /precondition|FAILED_PRECONDITION|409/i.test(msg)) {
-        invalidateAssimilatorState();
+        invalidateCuratorState();
         continue;
       }
-      console.warn('[assimilator-ingest] write failed', msg);
+      console.warn('[curator-ingest] write failed', msg);
       return { ingested: false, reason: 'write-failed' };
     }
   }
