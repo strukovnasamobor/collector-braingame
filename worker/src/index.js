@@ -2465,15 +2465,56 @@ async function sweepStaleGames(env) {
   }
 }
 
-// Weekly purge: hard-delete every game whose createdAtMs is older than 7 days,
-// regardless of status. Uses Firestore batched `:commit` so a full page of 300
-// deletes costs one subrequest — well inside the Free plan's 50-subrequest cap
-// even with several pages. Loops until no rows remain or we hit the safety cap.
+// Fields the archive keeps from each finished game. Ranked rating deltas
+// (delta1/delta2/newR1/newR2) live inside `result`, so they survive
+// automatically when `result` is kept.
+const ARCHIVE_KEEP_FIELDS = [
+  'createdAt',
+  'gridSize',
+  'mode',
+  'placementHistory',
+  'result',
+  'source',
+  'timeouts'
+];
+
+// Bot UIDs (prefix "bot:") stay so bot-performance is still measurable;
+// every human UID is replaced with the literal "human" so the archive
+// holds no individual-identifiable IDs.
+function maskPlayerUidField(typedValue) {
+  const v = typedValue?.stringValue;
+  if (v && v.startsWith('bot:')) return typedValue;
+  if (v) return { stringValue: 'human' };
+  return null;
+}
+
+function buildArchiveFields(srcFields) {
+  const out = {};
+  for (const k of ARCHIVE_KEEP_FIELDS) {
+    if (srcFields[k] !== undefined) out[k] = srcFields[k];
+  }
+  const p1 = maskPlayerUidField(srcFields.player1uid);
+  if (p1) out.player1uid = p1;
+  const p2 = maskPlayerUidField(srcFields.player2uid);
+  if (p2) out.player2uid = p2;
+  return out;
+}
+
+// Weekly cleanup: for every games/{id} doc older than 7 days, copy a
+// data-minimised view of `status === 'finished'` games into archived_games
+// then delete the original. Non-finished old games (left, cancelled, stuck
+// active/waiting) are deleted with no archive — they have no analytical
+// value. Two `:commit` calls per page (archive then delete) so a worst-case
+// all-finished page stays under Firestore's 500-write-per-commit limit;
+// archive runs first and bails on failure to avoid orphaning unarchived data.
 async function purgeOldGames(env) {
   const PURGE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const PAGE_SIZE = 300;
-  const MAX_PAGES = 20; // 20 × 300 = 6,000 docs max per cron run
+  // 15 × (runQuery + archive commit + delete commit) = 45 subrequests, plus
+  // a few for the BT learner; fits inside the Free plan's 50 cap.
+  const MAX_PAGES = 15;
   const cutoff = Date.now() - PURGE_AGE_MS;
+  let totalArchived = 0;
   let totalDeleted = 0;
 
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -2508,20 +2549,51 @@ async function purgeOldGames(env) {
     const docs = rows.map((r) => r.document).filter(Boolean);
     if (docs.length === 0) break;
 
-    const writes = docs.map((d) => ({ delete: d.name }));
-    try {
-      const commit = await firestoreFetch(env, ':commit', {
-        method: 'POST',
-        body: JSON.stringify({ writes })
+    // Step 1: archive finished games. Skip the commit entirely if no
+    // finished games landed on this page — saves a subrequest.
+    const archiveWrites = [];
+    for (const d of docs) {
+      if (d.fields?.status?.stringValue !== 'finished') continue;
+      archiveWrites.push({
+        update: {
+          name: d.name.replace('/documents/games/', '/documents/archived_games/'),
+          fields: buildArchiveFields(d.fields || {})
+        }
       });
-      if (!commit.ok) {
-        const txt = await commit.text();
-        console.error(`[purgeOldGames] commit ${commit.status}: ${txt}`);
+    }
+    if (archiveWrites.length > 0) {
+      try {
+        const archiveCommit = await firestoreFetch(env, ':commit', {
+          method: 'POST',
+          body: JSON.stringify({ writes: archiveWrites })
+        });
+        if (!archiveCommit.ok) {
+          const txt = await archiveCommit.text();
+          console.error(`[purgeOldGames] archive commit ${archiveCommit.status}: ${txt}`);
+          break;
+        }
+        totalArchived += archiveWrites.length;
+      } catch (err) {
+        console.error('[purgeOldGames] archive commit threw', err?.message);
         break;
       }
-      totalDeleted += writes.length;
+    }
+
+    // Step 2: delete every doc on this page (archived or not).
+    const deleteWrites = docs.map((d) => ({ delete: d.name }));
+    try {
+      const deleteCommit = await firestoreFetch(env, ':commit', {
+        method: 'POST',
+        body: JSON.stringify({ writes: deleteWrites })
+      });
+      if (!deleteCommit.ok) {
+        const txt = await deleteCommit.text();
+        console.error(`[purgeOldGames] delete commit ${deleteCommit.status}: ${txt}`);
+        break;
+      }
+      totalDeleted += deleteWrites.length;
     } catch (err) {
-      console.error('[purgeOldGames] commit threw', err?.message);
+      console.error('[purgeOldGames] delete commit threw', err?.message);
       break;
     }
 
@@ -2529,7 +2601,7 @@ async function purgeOldGames(env) {
     if (docs.length < PAGE_SIZE) break;
   }
 
-  console.log(`[purgeOldGames] done — deleted ${totalDeleted} games older than 7 days (cutoff=${cutoff})`);
+  console.log(`[purgeOldGames] done — archived ${totalArchived}, deleted ${totalDeleted}, cutoff=${cutoff}`);
 }
 
 // Wrap a Response to apply the validated CORS origin. Inner handlers always emit
