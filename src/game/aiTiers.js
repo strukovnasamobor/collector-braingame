@@ -13,10 +13,15 @@
 //                  offline UI must NOT list them as selectable opponents — the
 //                  learning components only have effect when the cloudflare
 //                  worker injects cfg.curatorState before the search.
+// `personalityEndgame: true` opts a tier into the personality-aware endgame
+// solver: positive margins are clamped to +1 (a win is a win; no over-attacking
+// for extra margin) and the personality weight breaks ties among equally
+// winning lines. Collector and Curator stay on the original margin eval — they
+// are the strongest tiers and don't need the tiebreak to express character.
 export const AI_TIERS = {
-  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false },
-  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false },
-  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false },
+  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
+  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
+  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
   collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
   curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
 };
@@ -30,17 +35,19 @@ export const TIER_ORDER = ['confiscator', 'conservator', 'cumulator'];
 export const ENDGAME_THRESHOLD = 12;
 export const ENDGAME_SAFETY_MS = 2000;
 
-// Skip the endgame solver entirely on boards smaller than this. The αβ-to-
-// terminal handoff is too aggressive on tiny boards — MCTS-RAVE plays the
-// whole game on 4×4 and 6×6.
-export const MIN_ENDGAME_BOARD_SIZE = 8;
+// Skip the endgame solver entirely on boards smaller than this. 4×4 still
+// plays the whole game in MCTS-RAVE (the αβ handoff is overkill at that scale).
+// 6×6 and up use the endgame solver — the exact αβ converges in well under
+// ENDGAME_SAFETY_MS once countEmpty() ≤ ENDGAME_THRESHOLD.
+export const MIN_ENDGAME_BOARD_SIZE = 6;
 
-// Cap each tier's per-move time budget (cfg.timeMs) at this value when the
-// board is below MIN_ENDGAME_BOARD_SIZE. The full 12 s budget is overkill on
-// 4×4 / 6×6 — MCTS-RAVE converges quickly there, and the extra wall-clock
-// only adds latency without improving move quality. Larger boards keep
-// whatever cfg.timeMs the tier configured.
-export const SMALL_BOARD_MAX_TIME_MS = 6000;
+// Cap each tier's per-move time budget (cfg.timeMs) at this value on boards
+// strictly smaller than SMALL_BOARD_TIME_CAP_SIZE. Decoupled from
+// MIN_ENDGAME_BOARD_SIZE: 6×6 now uses the endgame solver AND keeps the
+// 6 s cap, since MCTS-RAVE still converges quickly there and the full 12 s
+// budget adds wall-clock without improving move quality.
+export const SMALL_BOARD_TIME_CAP_SIZE = 8;
+export const SMALL_BOARD_MAX_TIME_MS   = 6000;
 
 // Eval — basic (Novice)
 export const EVAL_BASIC_MATERIAL    = 10.0;

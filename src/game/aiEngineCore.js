@@ -13,6 +13,7 @@ import {
   ENDGAME_THRESHOLD,
   ENDGAME_SAFETY_MS,
   MIN_ENDGAME_BOARD_SIZE,
+  SMALL_BOARD_TIME_CAP_SIZE,
   SMALL_BOARD_MAX_TIME_MS,
   EVAL_BASIC_MATERIAL,
   EVAL_BASIC_LIBERTY,
@@ -581,11 +582,22 @@ function runOnePly() {
 }
 
 // ── Endgame solver (Advanced only, terminal-only leaves) ───────────────────
+// Leaf eval. When personalityEndgameEff is on, positive margins are clamped
+// to +1 — "a win is a win regardless of margin," matching the game's
+// terminal rule. Negative margins (losses) keep their signed value so the
+// solver still plays "lose by less" when behind. With the clamp on, many
+// winning lines tie at +1 and the personality bias in endgameRoot decides
+// which one to play.
+function endgameLeafEval() {
+  const diff = biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+  return personalityEndgameEff && diff > 0 ? 1 : diff;
+}
+
 function endgameNegamax(alpha, beta, ply) {
   if (timedOut) return 0;
   if (performance.now() >= deadline) { timedOut = true; return 0; }
   if (ply >= MAX_PLY - 1) {
-    return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+    return endgameLeafEval();
   }
 
   const buf = moveBufs[ply];
@@ -593,10 +605,10 @@ function endgameNegamax(alpha, beta, ply) {
   const wasPhase = phase;
   if (wasPhase === PLACE) {
     n = genPlacements(buf);
-    if (n === 0) return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+    if (n === 0) return endgameLeafEval();
   } else {
     n = genEliminations(buf, lastIdx);
-    if (n === 0) return biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+    if (n === 0) return endgameLeafEval();
   }
 
   const key = ttKey();
@@ -642,6 +654,13 @@ function endgameRoot() {
 
   orderMoves(buf, n, -1, 0);
 
+  // With the binary clamp on positive margins, many winning lines tie at v=1.
+  // The personality bias is a tiny additive nudge — small enough never to
+  // change a win/loss/draw ordering, large enough to dominate floating-point
+  // noise in pickEps's equality check. Bias range is ~[0, 0.005] because the
+  // weight function returns ≤ ~50.
+  const usePersonalityBias = personalityEndgameEff && !lightPolicyEff;
+
   let best = -INF;
   let bestMove = -1;
   const scores = new Map();
@@ -656,7 +675,8 @@ function endgameRoot() {
     else v = -endgameNegamax(-beta, -alpha, 1);
     if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
     if (timedOut) return null;
-    scores.set(m, v);
+    const bias = usePersonalityBias ? weightFnEff(m, wasPhase, side) / 10000 : 0;
+    scores.set(m, v + bias);
     if (v > best) { best = v; bestMove = m; }
     if (v > alpha) alpha = v;
   }
@@ -699,9 +719,9 @@ function runEndgame() {
 //                (constrain opponent's growth when positive)
 const POLICY_DEFAULTS = {
   heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 },
-  collectHeavy: { placeOwn: 5, placeOpp:  0, placeDead: -3, elimOwn: -4, elimOpp: 3 },
-  attackHeavy:  { placeOwn: 1, placeOpp:  5, placeDead: -1, elimOwn: -1, elimOpp: 7 },
-  defenseHeavy: { placeOwn: 4, placeOpp: -2, placeDead: -3, elimOwn: -4, elimOpp: 2 }
+  collectHeavy: { placeOwn: 6, placeOpp:  0, placeDead: -2, elimOwn: -2, elimOpp: 2 },
+  attackHeavy:  { placeOwn: 2, placeOpp:  6, placeDead: -2, elimOwn: -2, elimOpp: 6 },
+  defenseHeavy: { placeOwn: 6, placeOpp: -2, placeDead: -2, elimOwn: -2, elimOpp: 2 }
 };
 
 function readCoef(cfg, name, fallback) {
@@ -947,6 +967,12 @@ let lightPolicyEff = false;
 // Active weight function for non-light policies. Built per-call by
 // buildPolicyWeightFn(cfg) from POLICY_DEFAULTS + any per-call overrides.
 let weightFnEff = makeWeightFn(POLICY_DEFAULTS.heavy);
+// Opt-in: when true, the endgame αβ solver clamps positive margins to +1 (so
+// "win is win" and the bot stops over-attacking for extra margin), and the
+// root scores get a personality-weight tiebreaker. Set per-call from
+// cfg.personalityEndgame. Collector/Curator leave this off — they use the
+// original signed-margin eval.
+let personalityEndgameEff = false;
 
 // AMAF (per-search). Index = ((side-1)*2 + phase) * N2 + cellIdx.
 let amafScore = null;
@@ -1274,14 +1300,25 @@ function countEmpty() {
 async function chooseMove(cfg) {
   // Cap the per-move time budget on small boards. MCTS-RAVE converges fast
   // when the position is tiny; the full 12 s budget just adds latency.
-  // Spread to a new cfg so we don't mutate the shared AI_TIERS entry.
-  if (size > 0 && size < MIN_ENDGAME_BOARD_SIZE
+  // Decoupled from MIN_ENDGAME_BOARD_SIZE — 6×6 keeps the cap even though it
+  // now uses the endgame solver. Spread to a new cfg so we don't mutate the
+  // shared AI_TIERS entry.
+  if (size > 0 && size < SMALL_BOARD_TIME_CAP_SIZE
       && Number(cfg.timeMs) > SMALL_BOARD_MAX_TIME_MS) {
     cfg = { ...cfg, timeMs: SMALL_BOARD_MAX_TIME_MS };
   }
 
   // Set the eval pointer for tiers that use one
   currentEval = EVAL_BY_NAME[cfg.evalName] || evalBasic;
+
+  // Set up policy state up front so the endgame solver can consult it for
+  // personality-biased tiebreaks (when cfg.personalityEndgame is set). The
+  // mctsrave path re-sets these inside runMCTSRave; the assignments here are
+  // idempotent for that path but necessary for the endgame branch which fires
+  // before runMCTSRave.
+  lightPolicyEff = cfg.policy === 'light';
+  weightFnEff = buildPolicyWeightFn(cfg);
+  personalityEndgameEff = !!cfg.personalityEndgame;
 
   // Per-tier endgame-trigger override (cfg.endgameDepth) falls back to module
   // constant. Lets a tier widen/tighten the handoff threshold per-tier.
