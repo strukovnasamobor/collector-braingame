@@ -24,11 +24,14 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from tune import load_config, run_pair, elo_diff, wilson_interval
 
-TIERS = ['confiscator', 'conservator', 'cumulator', 'collector']
+TIERS = ['connector', 'concentrator', 'constructor', 'coordinator',
+         'confiscator', 'conservator', 'cumulator', 'collector']
 
 def short(name):
-    return {'confiscator': 'Fis', 'conservator': 'Cns',
-            'cumulator': 'Cum', 'collector': 'Col'}[name]
+    return {'connector':    'Cnt', 'concentrator': 'Cnc',
+            'constructor':  'Cst', 'coordinator':  'Crd',
+            'confiscator':  'Fis', 'conservator':  'Cns',
+            'cumulator':    'Cum', 'collector':    'Col'}[name]
 
 def run_size(size, games, workers, configs):
     pairs = list(itertools.combinations(TIERS, 2))

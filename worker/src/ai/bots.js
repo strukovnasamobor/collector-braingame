@@ -9,6 +9,10 @@ export const isBotUid = (uid) => typeof uid === 'string' && uid.startsWith(BOT_U
 export const tierFromBotUid = (uid) => isBotUid(uid) ? uid.slice(BOT_UID_PREFIX.length) : null;
 
 export const BOT_DISPLAY = {
+  connector:   'Connector 🤖',
+  concentrator:'Concentrator 🤖',
+  constructor: 'Constructor 🤖',
+  coordinator: 'Coordinator 🤖',
   confiscator: 'Confiscator 🤖',
   conservator: 'Conservator 🤖',
   cumulator:   'Cumulator 🤖',
@@ -22,6 +26,10 @@ export const BOT_DISPLAY = {
 // MCTS-RAVE engine and only differ in rollout policy / learning, the initial
 // strength gap is small enough that observed Elo is the right source of truth.
 export const BOT_INITIAL_RATING = {
+  connector:   1000,
+  concentrator:1000,
+  constructor: 1000,
+  coordinator: 1000,
   confiscator: 1000,
   conservator: 1000,
   cumulator:   1000,

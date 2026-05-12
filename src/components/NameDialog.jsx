@@ -27,9 +27,9 @@ export default function NameDialog({ open, onCancel, onStart }) {
   const [size, setSize] = useState(8);
   const [timer, setTimer] = useState(true);
   const [p1AI, setP1AI] = useState(false);
-  const [p1Algo, setP1Algo] = useState('conservator');
+  const [p1Algo, setP1Algo] = useState('connector');
   const [p2AI, setP2AI] = useState(false);
-  const [p2Algo, setP2Algo] = useState('conservator');
+  const [p2Algo, setP2Algo] = useState('connector');
   const [error, setError] = useState('');
 
   const aiPlayerName = (algo) =>

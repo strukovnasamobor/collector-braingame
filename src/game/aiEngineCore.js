@@ -35,6 +35,33 @@ const MAX_DEPTH = 32;
 const TT_CAP = 500_000;
 const HISTORY_OVERFLOW = 1 << 28;
 const ENDGAME_TT_DEPTH = 99;
+const Q_MAX_DEPTH = 8;
+const IDAB_ASPIRATION_DELTA = 50;
+const IDAB_TIME_STOP_RATIO = 0.4;
+
+// Per-call IDAB feature toggles — set in runIDAB from cfg. Defaults reflect
+// what tournament testing measured for this game:
+//   quiescence  — OFF. Explodes on populated boards (~80% of placements pass
+//                 the grab-move filter) and the filter is asymmetric (misses
+//                 contested moves adjacent to opponent dots). Net regression
+//                 grows with board size: −226 Elo on 6×6, −300+ on 10×10.
+//   pvs         — OFF. Marginal speedup inside idabNegamax; the original
+//                 root-level PVS implementation contaminated pickEps's
+//                 scores Map with fail-soft upper bounds, causing false
+//                 ties that randomized to inferior moves.
+//   aspiration  — OFF. Combined with PVS it just thrashes — fail-low/high
+//                 re-searches cost more than the window-narrowing saves at
+//                 the depths reachable in 12 s on these board sizes.
+//   timeStop    — ON.  Head-to-head 8×8 over 48 games measured indistinguish-
+//                 able strength (Elo Δ −22, CI [−119, +75]); kept ON because
+//                 it saves real wall-clock time per move without strength cost.
+//
+// Override via cfg fields: `quiescence: true` / `pvs: true` / `aspiration: true`
+// to opt in, `timeStop: false` to opt out.
+let idabUseQuiescence = false;
+let idabUsePvs        = false;
+let idabUseAspiration = false;
+let idabUseTimeStop   = true;
 
 // ── Per-search mutable state ───────────────────────────────────────────────
 let size = 0;
@@ -555,6 +582,251 @@ function runFixedAB(depth, timeMsCap) {
   const r = searchRoot(depth);
   if (timedOut) return null;
   return r;
+}
+
+// ── Iterative-Deepening αβ with PVS, aspiration windows, quiescence ───────
+// Used by tiers with `kind: 'idab'`. Iterates depth 1→N until the time budget
+// runs out; returns the last *completed* iteration's result. Each iteration
+// uses Principal Variation Search (full window on first move, null window on
+// the rest with re-search on fail-high) and starts with an aspiration window
+// around the previous iteration's score (re-searched with a wider window on
+// fail-high/low). At depth 0, hands off to quiescenceNegamax instead of
+// returning the static leaf eval — this kills horizon effects on the
+// place→eliminate boundary, which is a big source of blunders in this game.
+
+function quiescenceNegamax(alpha, beta, ply, qDepth) {
+  if (timedOut) return 0;
+  if (performance.now() >= deadline) { timedOut = true; return 0; }
+  if (ply >= MAX_PLY - 1) return evaluate();
+  if (qDepth >= Q_MAX_DEPTH) return evaluate();
+
+  const wasPhase = phase;
+  const buf = moveBufs[ply];
+  let n;
+
+  if (wasPhase === PLACE) {
+    // Stand-pat: the leaf eval is a meaningful lower bound on what we can
+    // achieve here (we can always choose to play a quiet move). Only safe at
+    // PLACE because at ELIMINATE the half-turn is incomplete and the eval is
+    // asymmetric — we MUST extend at least one move there.
+    const standPat = evaluate();
+    if (standPat >= beta) return standPat;
+    if (standPat > alpha) alpha = standPat;
+
+    const allN = genPlacements(buf);
+    if (allN === 0) {
+      // Terminal: no legal placement. Mirror negamax's loss/win/draw scoring
+      // so we don't return stand-pat for a truly terminal node.
+      const diff = biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+      const sgn = diff > 0 ? 1 : diff < 0 ? -1 : 0;
+      return sgn * WIN_MAG + diff - ply;
+    }
+    // Filter to grab moves only (touch own or opponent dots). Everything else
+    // is "quiet" and already captured by stand-pat.
+    let k = 0;
+    for (let i = 0; i < allN; i++) {
+      if (isGrabMove(buf[i])) buf[k++] = buf[i];
+    }
+    n = k;
+    if (n === 0) return alpha;
+  } else {
+    // ELIMINATE: all eliminations are tactical (≤8 candidates total).
+    n = genEliminations(buf, lastIdx);
+    if (n === 0) return evaluate();
+  }
+
+  orderMoves(buf, n, -1, ply);
+
+  let best = wasPhase === PLACE ? alpha : -INF;
+  for (let i = 0; i < n; i++) {
+    const m = buf[i];
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+    let v;
+    if (wasPhase === PLACE) v = quiescenceNegamax(alpha, beta, ply + 1, qDepth + 1);
+    else v = -quiescenceNegamax(-beta, -alpha, ply + 1, qDepth + 1);
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+    if (timedOut) return 0;
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function idabNegamax(depth, alpha, beta, ply) {
+  if (timedOut) return 0;
+  if (performance.now() >= deadline) { timedOut = true; return 0; }
+  if (ply >= MAX_PLY - 1) return evaluate();
+
+  const buf = moveBufs[ply];
+  let n;
+  const wasPhase = phase;
+  if (wasPhase === PLACE) {
+    n = genPlacements(buf);
+    if (n === 0) {
+      const diff = biggestGroup(side) - biggestGroup(side === 1 ? 2 : 1);
+      const sgn = diff > 0 ? 1 : diff < 0 ? -1 : 0;
+      return sgn * WIN_MAG + diff - ply;
+    }
+  } else {
+    n = genEliminations(buf, lastIdx);
+    if (n === 0) return evaluate();
+  }
+
+  const key = ttKey();
+  const e = tt.get(key);
+  let ttMove = -1;
+  if (e && e.depth >= depth && e.depth !== ENDGAME_TT_DEPTH) {
+    if (e.flag === FLAG_EXACT) return e.value;
+    if (e.flag === FLAG_LOWER && e.value >= beta) return e.value;
+    if (e.flag === FLAG_UPPER && e.value <= alpha) return e.value;
+  }
+  if (e) ttMove = e.move;
+
+  if (depth <= 0) {
+    return idabUseQuiescence ? quiescenceNegamax(alpha, beta, ply, 0) : evaluate();
+  }
+
+  orderMoves(buf, n, ttMove, ply);
+
+  let best = -INF;
+  let bestMove = -1;
+  const aOrig = alpha;
+  for (let i = 0; i < n; i++) {
+    const m = buf[i];
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+    let v;
+    if (i === 0 || !idabUsePvs) {
+      // First (PV) move or PVS disabled: full window
+      if (wasPhase === PLACE) v = idabNegamax(depth - 1, alpha, beta, ply + 1);
+      else v = -idabNegamax(depth - 1, -beta, -alpha, ply + 1);
+    } else {
+      // PVS null-window probe
+      if (wasPhase === PLACE) v = idabNegamax(depth - 1, alpha, alpha + 1, ply + 1);
+      else v = -idabNegamax(depth - 1, -(alpha + 1), -alpha, ply + 1);
+      // Re-search with full window if the move surprises us (beats alpha but
+      // doesn't exceed beta — null-window only told us it's > alpha, not exact).
+      if (!timedOut && v > alpha && v < beta) {
+        if (wasPhase === PLACE) v = idabNegamax(depth - 1, alpha, beta, ply + 1);
+        else v = -idabNegamax(depth - 1, -beta, -alpha, ply + 1);
+      }
+    }
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+    if (timedOut) return 0;
+
+    if (v > best) { best = v; bestMove = m; }
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) {
+      if (!isGrabMove(m)) {
+        pushKiller(ply, m);
+        bumpHistory(side, wasPhase === PLACE ? 0 : 1, m, depth);
+      }
+      break;
+    }
+  }
+
+  const flag = best <= aOrig ? FLAG_UPPER : best >= beta ? FLAG_LOWER : FLAG_EXACT;
+  ttStore(key, depth, best, flag, bestMove);
+  return best;
+}
+
+function idabSearchRoot(depth, alpha, beta) {
+  const buf = moveBufs[0];
+  const wasPhase = phase;
+  let n;
+  if (wasPhase === PLACE) n = genPlacements(buf);
+  else n = genEliminations(buf, lastIdx);
+  if (n === 0) return null;
+
+  const key = ttKey();
+  const e = tt.get(key);
+  const ttMove = (e && e.move >= 0) ? e.move : -1;
+  orderMoves(buf, n, ttMove, 0);
+
+  // Full window per move at the root — gives every move its TRUE value
+  // within [alpha, beta] for the pickEps tie-breaking Map. Scout-style alpha
+  // growth at the root contaminates `scores` with fail-soft upper bounds
+  // that can equal alphaCur exactly (float eval makes these "false ties"
+  // frequent), causing pickEps to randomize between the PV and inferior
+  // moves. PVS speedup still applies INSIDE idabNegamax — the root only
+  // iterates N moves so the extra work is negligible.
+  let best = -INF;
+  let bestMove = -1;
+  const scores = new Map();
+  for (let i = 0; i < n; i++) {
+    const m = buf[i];
+    const savedLastIdx = lastIdx;
+    if (wasPhase === PLACE) applyPlace(m); else applyEliminate(m);
+    let v;
+    if (wasPhase === PLACE) v = idabNegamax(depth - 1, alpha, beta, 1);
+    else v = -idabNegamax(depth - 1, -beta, -alpha, 1);
+    if (wasPhase === PLACE) undoPlace(m); else undoEliminate(m, savedLastIdx);
+    if (timedOut) return null;
+    scores.set(m, v);
+    if (v > best) { best = v; bestMove = m; }
+  }
+  return { bestMove, bestValue: best, scores };
+}
+
+function runIDAB(maxDepth, timeMsCap, cfg) {
+  // Per-call feature toggles. See defaults rationale at the module-level
+  // declarations. Quiescence/PVS/aspiration default OFF (measured to hurt
+  // in this game's branching pattern); explicit `true` opts in. timeStop
+  // defaults ON; explicit `false` opts out.
+  idabUseQuiescence = !!cfg && cfg.quiescence === true;
+  idabUsePvs        = !!cfg && cfg.pvs        === true;
+  idabUseAspiration = !!cfg && cfg.aspiration === true;
+  idabUseTimeStop   = !cfg || cfg.timeStop !== false;
+
+  const budget = timeMsCap || 12000;
+  const t0 = performance.now();
+  deadline = t0 + budget;
+  timedOut = false;
+
+  let bestResult = null;
+  let prevScore = 0;
+  const maxD = (maxDepth && maxDepth > 0) ? maxDepth : MAX_DEPTH;
+
+  for (let d = 1; d <= maxD; d++) {
+    // Smart time stop: don't start iteration d+1 if we've already burned
+    // > 40% of the budget. Each iteration typically costs 2–4× the last
+    // (effective branching factor ~5–10 here even with good ordering), so
+    // starting one we can't finish just wastes time on a discarded search.
+    if (idabUseTimeStop && bestResult) {
+      const elapsed = performance.now() - t0;
+      if (elapsed > budget * IDAB_TIME_STOP_RATIO) break;
+    }
+
+    // Aspiration window around the last iteration's score. d == 1 uses a full
+    // window (no prior score to anchor on). On fail-low/high, re-search with
+    // one side opened to ±INF.
+    let alphaW, betaW;
+    if (!idabUseAspiration || d <= 1) { alphaW = -INF; betaW = INF; }
+    else { alphaW = prevScore - IDAB_ASPIRATION_DELTA; betaW = prevScore + IDAB_ASPIRATION_DELTA; }
+
+    let r = idabSearchRoot(d, alphaW, betaW);
+    if (timedOut) break;
+
+    if (idabUseAspiration && r && d > 1) {
+      if (r.bestValue <= alphaW) {
+        // Fail-low: true score may be < alphaW. Re-search with lower bound open.
+        r = idabSearchRoot(d, -INF, alphaW + 1);
+        if (timedOut) break;
+      } else if (r.bestValue >= betaW) {
+        // Fail-high: true score may be > betaW. Re-search with upper bound open.
+        r = idabSearchRoot(d, betaW - 1, INF);
+        if (timedOut) break;
+      }
+    }
+
+    if (r) {
+      bestResult = r;
+      prevScore = r.bestValue;
+    }
+  }
+  return bestResult;
 }
 
 // ── 1-ply greedy (Beginner) ────────────────────────────────────────────────
@@ -1336,6 +1608,14 @@ async function chooseMove(cfg) {
       if (eg) return pickEps(eg.scores, 0, 0);
     }
     const r = runFixedAB(cfg.depth, cfg.timeMs);
+    return pickEps(r?.scores, 0, 0);
+  }
+  if (cfg.kind === 'idab') {
+    if (cfg.endgame && size >= MIN_ENDGAME_BOARD_SIZE && countEmpty() <= endgameThreshold) {
+      const eg = runEndgame();
+      if (eg) return pickEps(eg.scores, 0, 0);
+    }
+    const r = runIDAB(cfg.depth, cfg.timeMs, cfg);
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {
