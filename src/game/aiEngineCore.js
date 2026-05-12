@@ -992,7 +992,7 @@ function runEndgame() {
 const POLICY_DEFAULTS = {
   heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 },
   collectHeavy: { placeOwn: 6, placeOpp:  0, placeDead: -2, elimOwn: -2, elimOpp: 2 },
-  attackHeavy:  { placeOwn: 2, placeOpp:  6, placeDead: -2, elimOwn: -2, elimOpp: 6 },
+  attackHeavy:  { placeOwn: 2, placeOpp:  4, placeDead: -2, elimOwn: -2, elimOpp: 4 },
   defenseHeavy: { placeOwn: 6, placeOpp: -2, placeDead: -2, elimOwn: -2, elimOpp: 2 }
 };
 
