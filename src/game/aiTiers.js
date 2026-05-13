@@ -18,13 +18,13 @@
 //      confiscator  — attackHeavy:  aggressive, contests opponent territory
 //      conservator  — defenseHeavy: builds own group, avoids opponent contact
 //      cumulator    — collectHeavy: own-group focused, neutral on opponent contact
-//      collector    — heavy:        balanced offense + defense (online-only)
+//      collector    — heavy:        balanced offense + defense (default tier)
 //      curator      — heavy + (online-only) opening book + MAST prior + learned
 //                     policy weights. The browser engine has no Firestore access,
-//                     so offline these two entries exist for API parity but the
-//                     offline UI must NOT list them as selectable opponents — the
-//                     learning components only have effect when the cloudflare
-//                     worker injects cfg.curatorState before the search.
+//                     so offline this entry exists for API parity but the offline
+//                     UI must NOT list it as a selectable opponent — the learning
+//                     components only have effect when the cloudflare worker
+//                     injects cfg.curatorState before the search.
 // `personalityEndgame: true` opts a tier into the personality-aware endgame
 // solver: positive margins are clamped to +1 (a win is a win; no over-attacking
 // for extra margin) and the personality weight breaks ties among equally
@@ -35,17 +35,17 @@ export const AI_TIERS = {
   concentrator:{ kind: 'oneply',   evalName: 'basic' },
   constructor: { kind: 'fixedab',  evalName: 'basic', depth: 3 },
   coordinator: { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false },
-  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
+  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
   curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
 };
 
-// Offline-visible tier order. Excludes 'collector' and 'curator' — those
-// are online-only (Collector by product decision; Curator because its
-// learning components live in Firestore, accessed only by the worker).
-export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator'];
+// Offline-visible tier order. Excludes 'curator' — its learning components
+// (opening book + MAST + learned policy weights) live in Firestore and are
+// only available when the cloudflare worker injects cfg.curatorState.
+export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector'];
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval
 export const ENDGAME_THRESHOLD = 12;

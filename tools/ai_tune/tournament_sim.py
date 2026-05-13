@@ -5,21 +5,29 @@ Rating-based tournament simulator.
 Mirrors the online matchmaking flow:
   1. Initial ratings (all bots start at display rating 1000;
      mu = DEFAULT_MU = 1500, sigma = DEFAULT_SIGMA = 500).
-  2. For each match on 8×8:
-       a. Pick a random bot as the "player".
-       b. Run the online matchmaker against the other bots:
-          pool = sample min(ceil(N/10) + 1, 1000, N) candidates, then pick the
-          one whose display rating is closest to the player's.
-       c. Lower-rated bot is P1 (ties → player is P1, matching the online rule
-          for human-vs-bot ties).
+  2. Each bot plays exactly --n matches *as the random "player"* (the side
+     that initiates matchmaking). Once a bot hits the cap it stops being
+     drawn as the player, but it can still be selected as an opponent by
+     the matchmaker for someone else's match. So every bot plays AT LEAST
+     --n games (n as player + however many times it gets matched against).
+     Total matches = len(BOTS) * n.
+  3. For each match:
+       a. Pick a random bot among those still under the cap as the "player".
+       b. Run the matchmaker against ALL other bots (the as-player cap
+          doesn't apply to opponent selection): pool = sample min(N, 100)
+          candidates, pick the closest display rating. With N=7 (8 bots),
+          this is always all candidates — pairing becomes deterministic.
+       c. Lower-rated bot is P1 (ties → player is P1, matching the online
+          rule for human-vs-bot ties).
        d. Play the game; update both ratings via the OpenSkill-style formula
           ported from src/game/skillRating.js.
        e. Print pairing + result + rating deltas.
-  3. After all matches, print the final ranking by display rating.
+  4. After all matches, print the final ranking by display rating.
 
 Usage:
-  python tournament_sim.py --n 50
+  python tournament_sim.py --n 50              # 50 per bot, 400 total
   python tournament_sim.py --n 100 --seed 42
+  python tournament_sim.py --n 20 --prefix=""  # full-budget configs, 160 total
 """
 import argparse
 import json
@@ -98,19 +106,25 @@ def update_after_win(winner, loser):
 
     return new_profile(new_w_mu, new_w_sigma), new_profile(new_l_mu, new_l_sigma)
 
-# ── Matchmaking (mirrors worker/src/index.js ranked-mode matchmaker) ───────
-MATCHMAKING_POOL_DIVISOR = 10
-MATCHMAKING_POOL_MAX = 1000
+# ── Matchmaking ────────────────────────────────────────────────────────────
+# Note: this diverges from the online matchmaker in worker/src/index.js,
+# which samples min(ceil(N/10)+1, 1000, N) candidates to introduce variety
+# in pairing. Here we use min(N, 100) instead — with a small fixed bot set
+# (N=7 for 8 BOTS), the pool always contains every candidate and the
+# matchmaker becomes deterministic: always pair with the closest-rated bot.
+# This makes per-tier rating convergence faster and less noisy in a
+# simulator context where we want every match to use the strongest possible
+# pairing signal.
+MATCHMAKING_POOL_MAX = 100
 
 def find_opponent(player, profiles, rng):
-    """Sample a pool of size min(ceil(N/10)+1, 1000, N) from candidates
-    (everyone except `player`), then pick the candidate whose rating is
-    closest to player's rating. Ties broken by sample order.
+    """Sample a pool of size min(N, 100) from candidates (everyone except
+    `player`), then pick the candidate whose rating is closest to player's
+    rating. Ties broken by sample order.
     """
     candidates = [b for b in BOTS if b != player]
     N = len(candidates)
-    pool_size = min(math.ceil(N / MATCHMAKING_POOL_DIVISOR) + 1,
-                    MATCHMAKING_POOL_MAX, N)
+    pool_size = min(N, MATCHMAKING_POOL_MAX)
     pool = rng.sample(candidates, pool_size)
     player_rating = profiles[player]['rating']
     best = None
@@ -141,7 +155,9 @@ def assign_p1_p2(player, opponent, profiles, rng):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--n', type=int, default=50,
-                    help='Number of matches to play (default 50)')
+                    help='Matches per bot as the random "player" (default 50). '
+                         'Total matches = len(BOTS) * n. Each bot plays at '
+                         'least n games (n as player, plus opponent selections).')
     ap.add_argument('--size', type=int, default=8,
                     help='Board size (default 8)')
     ap.add_argument('--prefix', default='test_',
@@ -155,20 +171,34 @@ def main():
     configs = {b: load_config(f'{args.prefix}{b}') for b in BOTS}
     profiles = {b: new_profile() for b in BOTS}
     stats = {b: {'played': 0, 'wins': 0, 'draws': 0, 'losses': 0} for b in BOTS}
+    # Per-bot count of times each bot has been selected as the random "player"
+    # (the side that initiates matchmaking). Once this hits args.n, the bot
+    # is no longer eligible to be drawn as the player — but it can still be
+    # selected as an opponent for someone else's match. This guarantees every
+    # bot has at least args.n games on the books.
+    as_player_count = {b: 0 for b in BOTS}
+    target_per_bot = args.n
+    total_matches = len(BOTS) * target_per_bot
 
-    print(f'Tournament: {args.n} matches on {args.size}x{args.size}')
+    print(f'Tournament: {target_per_bot} matches per bot as player ({total_matches} total) on {args.size}x{args.size}')
     print(f'Bots:       {", ".join(BOTS)}')
     print(f'Configs:    {args.prefix}<bot>.json')
     print(f'Initial ratings: all = {profiles[BOTS[0]]["rating"]}')
-    print(f'Matchmaking: pool=min(ceil(N/10)+1, 1000, N)={min(math.ceil(len(BOTS)-1)/MATCHMAKING_POOL_DIVISOR + 1, MATCHMAKING_POOL_MAX, len(BOTS)-1):.0f}; closest by rating')
+    print(f'Matchmaking: pool=min(N, {MATCHMAKING_POOL_MAX})={min(len(BOTS)-1, MATCHMAKING_POOL_MAX)}; closest by rating')
     print(f'P1 rule:     lower-rated plays first')
     print('=' * 78)
 
     eng = EngineProcess()
     t0 = time.time()
+    match_idx = 0
     try:
-        for match_idx in range(1, args.n + 1):
-            player = rng.choice(BOTS)
+        while True:
+            # Pool of bots still under the per-bot cap as "player".
+            eligible = [b for b in BOTS if as_player_count[b] < target_per_bot]
+            if not eligible:
+                break
+            match_idx += 1
+            player = rng.choice(eligible)
             opponent, pool = find_opponent(player, profiles, rng)
             p1, p2 = assign_p1_p2(player, opponent, profiles, rng)
 
@@ -208,8 +238,14 @@ def main():
                 stats[winner]['wins'] += 1
                 stats[loser]['losses'] += 1
 
+            # Bump player's as-player count AFTER the match. Once this hits
+            # target_per_bot, the bot drops out of the `eligible` pool next
+            # iteration and only appears as an opponent from there on.
+            as_player_count[player] += 1
+
             print(
-                f'#{match_idx:>3} | player {player:>12}({before_p["rating"]:>4})  '
+                f'#{match_idx:>3}/{total_matches} | player {player:>12}({before_p["rating"]:>4})'
+                f'[{as_player_count[player]}/{target_per_bot}]  '
                 f'opp {opponent:>12}({before_o["rating"]:>4})  '
                 f'pool[{",".join(pool)}]  '
                 f'P1={p1:>12}  '
@@ -222,7 +258,7 @@ def main():
 
     elapsed = time.time() - t0
     print('=' * 78)
-    print(f'\nFinal ratings ({args.n} matches, {elapsed:.1f}s wall):')
+    print(f'\nFinal ratings ({match_idx} matches, {elapsed:.1f}s wall):')
     print(f'  {"#":>2}  {"bot":>13}  {"rating":>6}  {"mu":>7}  {"sigma":>5}  '
           f'{"games":>5}  {"W":>3}/{"D":>2}/{"L":>3}  {"win%":>5}')
     ladder = sorted(BOTS, key=lambda b: -profiles[b]['rating'])

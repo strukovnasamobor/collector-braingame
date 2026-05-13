@@ -63,8 +63,7 @@ const TURN_DEADLINE_GRACE_MS = 2 * 1000;
 const QUEUE_QUERY_LIMIT = 200;
 const ACTIVE_GAME_QUERY_LIMIT = 5;
 
-const MATCHMAKING_POOL_DIVISOR = 10;
-const MATCHMAKING_POOL_MAX = 1000;
+const MATCHMAKING_POOL_MAX = 100;
 
 const ALLOWED_GRID_SIZES = new Set([6, 8, 10]);
 const RANKED_GRID_SIZE = 8;
@@ -1280,11 +1279,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       const entry = liveCandidates[idx];
       chosen = { candidate: entry, displayRating: Number(entry.data.rating || DEFAULT_DISPLAY_RATING) };
     } else {
-      const poolSize = Math.min(
-        Math.ceil(N / MATCHMAKING_POOL_DIVISOR) + 1,
-        MATCHMAKING_POOL_MAX,
-        N
-      );
+      const poolSize = Math.min(N, MATCHMAKING_POOL_MAX);
       const pool = liveCandidates.slice();
       for (let i = 0; i < poolSize; i++) {
         const j = i + Math.floor(Math.random() * (pool.length - i));
@@ -1384,12 +1379,7 @@ async function handleMatchmakingAction(env, authUser, body) {
         selfIsP1 = Math.random() < 0.5;
       }
     } else {
-      const selfGrid = Number(liveSelf.data.gridSize) || 6;
-      if (candidateIsBot && selfGrid === 6) {
-        selfIsP1 = true;
-      } else {
-        selfIsP1 = Math.random() < 0.5;
-      }
+      selfIsP1 = Math.random() < 0.5;
     }
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;

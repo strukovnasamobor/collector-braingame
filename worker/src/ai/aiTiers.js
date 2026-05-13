@@ -18,7 +18,7 @@
 //      confiscator  — attackHeavy:  aggressive, contests opponent territory
 //      conservator  — defenseHeavy: builds own group, avoids opponent contact
 //      cumulator    — collectHeavy: own-group focused, neutral on opponent contact
-//      collector    — heavy:        balanced offense + defense
+//      collector    — heavy:        balanced offense + defense (default tier)
 //      curator      — heavy + opening book + MAST prior + learned policy weights
 //                     (online-only; aiEngine reads cfg.curatorState injected
 //                     by the worker. Offline play has no state doc → falls back
@@ -33,10 +33,10 @@ export const AI_TIERS = {
   concentrator:{ kind: 'oneply',   evalName: 'basic' },
   constructor: { kind: 'fixedab',  evalName: 'basic', depth: 3 },
   coordinator: { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false },
-  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, reuseTree: true, rolloutShortcut: false, personalityEndgame: true },
-  collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
+  confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
+  collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
   curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
 };
 

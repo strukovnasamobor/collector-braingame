@@ -1,20 +1,16 @@
 
 OFFLINE AND ONLINE AI TIERS
-    - simulate tournament rankings: python tournament_sim.py --n 50 --prefix ""
-    - implement offline and online
-    - make Collector available offline and make it default
-    - in offline and online standard game on 6x6 board all AI tiers - timeMs: 6000
 1. Connector                { kind: 'oneply',   evalName: 'simple' }
 2. Concentrator             { kind: 'oneply',   evalName: 'basic' }
 3. Constructor              { kind: 'fixedab',  evalName: 'basic', depth: 3 }
-    - 4. Coordinator              { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false } #timeMS per move (both place and eliminate)
-5. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 } 
-                                                                  #timeMS for placing + 2-4s for eliminating, simBudget=25000k is optimal and hiting before timeMs
+4. Coordinator              { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false } #timeMS per move (both place and eliminate)
+5. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }  #timeMS for placing + 2-4s for eliminating, simBudget=25000k is optimal and hiting before timeMs
 6. Conservator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 7. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 8. Collector                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, endgameDepth: 12, personalityEndgame: false, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 - Only in online games:
 9. Curator                  = collector + opening book + MAST table + feature-weight learning
+***** 10. Cogitator               { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
 - in offline and online standard game on 6x6 board all AI tiers - timeMs: 6000
 - policy:
     - Confiscator   - attackHeavy:  { placeOwn: 2, placeOpp:  4, placeDead: -2, elimOwn: -2, elimOpp: 4 }, chases opponent on placement
@@ -29,8 +25,20 @@ OFFLINE AND ONLINE AI TIERS
         - ownAdj - number of your own dots adjacent
         - oppAdj - number of opponent's dots adjacent
         - deadAdj - number of dead (eliminated) cells adjacent
-- in standard game on 6x6 board Human is always playing first
 - in ranked game player with lower ranking plays first, if Human vs Bot is a tie Human is always playing first, if Human vs Human tie then random
+- in ranked game matchmaking pool size = min(number_of_players_in_queue, 100) then choose closest by rating
+
+- simulate tournament rankings: python tournament_sim.py --n 25 --prefix ""
+    Final ratings (200 matches, 16169.5s wall):
+    #            bot  rating       mu  sigma  games    W/ D/  L   win%
+    1.    collector    1671   2165.5   74.5     50   26/ 8/ 16  60.0%
+    2.    cumulator    1647   2103.4   74.5     52   23/ 9/ 20  52.9%
+    3.  conservator    1522   1783.3   74.8     46   22/ 3/ 21  51.1%
+    4.  confiscator    1507   1729.9   70.8     54   25/ 6/ 23  51.9%
+    5.  coordinator    1450   1610.9   82.2     49   25/ 8/ 16  59.2%
+    6.  constructor    1376   1363.2   67.3     66   29/ 7/ 30  49.2%
+    7. concentrator    1270   1093.2   78.8     56   28/ 1/ 27  50.9%
+    8.    connector    1042    548.6  135.3     27    1/ 0/ 26   3.7%
 
 10 x 10 BOARD
 #	Word		    P	B	C/B	T
