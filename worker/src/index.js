@@ -1110,6 +1110,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       mu: profile.mu,
       sigma: profile.sigma,
       rating: profile.rating,
+      coins: Number(profile.coins) || 0,
       gameId: null,
       matchedWith: null,
       queueToken: crypto.randomUUID(),
@@ -1216,32 +1217,56 @@ async function handleMatchmakingAction(env, authUser, body) {
       botsConfigured && (liveHumanCount > 0 || selfWaitMs >= HUMAN_WAIT_MS);
 
     if (includeBots) {
-      // Standard admits all 3 tiers on any STANDARD_BOT_GRID_SIZES grid.
-      // Ranked admits all 3 tiers only on the canonical 8x8 timer-on config.
-      // Ranked reads fresh ratings every time so closest-rating selection
-      // doesn't pair off the per-isolate cache (warm isolates can hold
-      // stale ratings indefinitely if they never run /ranked/finalize).
+      // Synthesize a single closest-fit bot — by coins (standard) or rating
+      // (ranked) — instead of admitting all tiers into the candidate pool.
+      // Profile fetches still scan every tier (we need the attribute values
+      // to pick the closest), but only the winner is pushed. Ranked reads
+      // fresh every time so closest-rating selection doesn't pair off the
+      // per-isolate cache (warm isolates can hold stale ratings indefinitely
+      // if they never run /ranked/finalize). Standard bot coins are fixed
+      // values seeded manually in Firestore, so the cache is fine there.
       const forceFresh = mode === 'ranked';
+      const selfAttr = mode === 'standard'
+        ? Number(self.coins || 0)
+        : Number(self.rating || DEFAULT_DISPLAY_RATING);
+
+      let bestTier = null;
+      let bestProfile = null;
+      let bestDiff = Infinity;
       for (const tier of ALL_TIERS) {
         const uid = botUidFor(tier);
         const profile = await getBotProfile(env, uid, getDocument, { forceFresh });
+        const botAttr = mode === 'standard'
+          ? (Number(profile.coins) || 0)
+          : (Number(profile.rating) || DEFAULT_DISPLAY_RATING);
+        const diff = Math.abs(botAttr - selfAttr);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestTier = tier;
+          bestProfile = profile;
+        }
+      }
+
+      if (bestTier && bestProfile) {
+        const uid = botUidFor(bestTier);
         const docId = mode === 'standard'
-          ? standardBotQueueDocId(tier, selfGridSize)
-          : rankedBotQueueDocId(tier);
+          ? standardBotQueueDocId(bestTier, selfGridSize)
+          : rankedBotQueueDocId(bestTier);
         liveCandidates.push({
           id: docId,
           updateTime: null,
           data: {
             uid,
             isBot: true,
-            botTier: tier,
-            displayName: BOT_DISPLAY[tier],
+            botTier: bestTier,
+            displayName: BOT_DISPLAY[bestTier],
             mode,
             gridSize: mode === 'ranked' ? 8 : selfGridSize,
             timerEnabled: true,
-            mu: profile.mu,
-            sigma: profile.sigma,
-            rating: profile.rating,
+            mu: bestProfile.mu,
+            sigma: bestProfile.sigma,
+            rating: bestProfile.rating,
+            coins: Number(bestProfile.coins) || 0,
             status: 'searching',
             gameId: null,
             matchedWith: null,
@@ -1269,15 +1294,33 @@ async function handleMatchmakingAction(env, authUser, body) {
       return corsResponse({ ok: true, gameId: null, retryAfterMs });
     }
 
-    // Standard mode: pick uniformly at random — ratings are not updated in
-    // Standard, so proximity has no meaning. Ranked mode: sample a random pool
-    // of size K = min(ceil(N/10) + 1, 1000, N) then pick the closest by rating
-    // so skilled players are matched fairly.
+    // Standard mode: pick by closest coin balance. Bots carry fixed coin
+    // values (Connector 100 … Curator 900 BGC) seeded manually in Firestore,
+    // so the bot ladder doubles as a coin-progression curriculum: a player
+    // with N coins lands on the bot whose fixed value is nearest to N.
+    // Humans match against the closest-coined human if there is one in the
+    // pool. Ranked mode: closest by display rating so skilled players are
+    // matched fairly. Both use a min(N, 100) shuffled pool.
     let chosen = null;
     if (mode === 'standard') {
-      const idx = Math.floor(Math.random() * N);
-      const entry = liveCandidates[idx];
-      chosen = { candidate: entry, displayRating: Number(entry.data.rating || DEFAULT_DISPLAY_RATING) };
+      const selfCoins = Number(self.coins || 0);
+      const poolSize = Math.min(N, MATCHMAKING_POOL_MAX);
+      const pool = liveCandidates.slice();
+      for (let i = 0; i < poolSize; i++) {
+        const j = i + Math.floor(Math.random() * (pool.length - i));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      pool.length = poolSize;
+
+      let bestDiff = Infinity;
+      for (const entry of pool) {
+        const coins = Number(entry.data.coins || 0);
+        const diff = Math.abs(coins - selfCoins);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          chosen = { candidate: entry, displayRating: Number(entry.data.rating || DEFAULT_DISPLAY_RATING) };
+        }
+      }
     } else {
       const poolSize = Math.min(N, MATCHMAKING_POOL_MAX);
       const pool = liveCandidates.slice();
@@ -1354,13 +1397,13 @@ async function handleMatchmakingAction(env, authUser, body) {
 
     // P1/P2 assignment.
     //
-    //   Ranked: lower rating gets P1 (small first-move edge for the underdog).
-    //           Tie + bot opponent  -> human is P1.
-    //           Tie + human opponent -> random 50/50.
+    //   Ranked:   lower rating gets P1 (small first-move edge for the underdog).
+    //             Tie + bot opponent  -> human is P1.
+    //             Tie + human opponent -> random 50/50.
     //
-    //   Standard, 6×6 vs bot: human is always P1 (the 6×6 is the entry-level
-    //           board and gets the human-friendly default).
-    //   Standard, any other shape: random 50/50.
+    //   Standard: lower coins gets P1 (entry-level edge for the underdog).
+    //             Tie + bot opponent  -> human is P1.
+    //             Tie + human opponent -> random 50/50.
     //
     // The leader-uid race protection above guarantees Math.random() only
     // runs on one side per match, so both clients see the same outcome via
@@ -1379,7 +1422,17 @@ async function handleMatchmakingAction(env, authUser, body) {
         selfIsP1 = Math.random() < 0.5;
       }
     } else {
-      selfIsP1 = Math.random() < 0.5;
+      const selfCoins = Number(liveSelf.data.coins || 0);
+      const oppCoins = Number(liveCandidate.coins || 0);
+      if (selfCoins < oppCoins) {
+        selfIsP1 = true;
+      } else if (selfCoins > oppCoins) {
+        selfIsP1 = false;
+      } else if (candidateIsBot) {
+        selfIsP1 = true;
+      } else {
+        selfIsP1 = Math.random() < 0.5;
+      }
     }
     const p1 = selfIsP1 ? liveSelf.data : liveCandidate;
     const p2 = selfIsP1 ? liveCandidate : liveSelf.data;
@@ -1569,8 +1622,13 @@ async function handleMatchmakingAction(env, authUser, body) {
 
 // Brain Gold Coin economy — additive update to a single player's wallet.
 // Clamped at 0 so the leaver penalty never produces a negative balance.
+//
+// Bots are exempt: their coin values are set manually in Firestore (one
+// fixed amount per tier) and double as a difficulty proxy for the standard
+// matchmaker (closest-by-coins pairing). Gameplay must never modify them.
 async function bumpPlayerCoins(env, uid, delta) {
   if (!uid || !Number.isFinite(delta) || delta === 0) return;
+  if (isBotUid(uid)) return;
   try {
     await mergePlayerWithRetry(env, uid, (raw) => {
       const cur = Number.isFinite(Number(raw.coins)) ? Number(raw.coins) : 0;

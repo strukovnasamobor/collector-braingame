@@ -776,7 +776,15 @@ function idabSearchRoot(depth, alpha, beta) {
   return { bestMove, bestValue: best, scores };
 }
 
-function runIDAB(maxDepth, timeMsCap, cfg) {
+// ASYNC: yields to the event loop between depth iterations so Cloudflare's
+// frozen Date.now()/performance.now() actually advance and the deadline
+// check + smart-time-stop can fire. Without the yield, the runtime treats
+// the entire iterative-deepening loop as one un-interruptible CPU block
+// and the wall budget becomes purely advisory (same constraint MCTS-RAVE
+// handles via its per-batch yield at runMCTSRave). Limitation: a single
+// iteration that overruns the budget is still un-interruptible — the
+// smart-time-stop relies on the previous iteration completing first.
+async function runIDAB(maxDepth, timeMsCap, cfg) {
   // Per-call feature toggles. See defaults rationale at the module-level
   // declarations. Quiescence/PVS/aspiration default OFF (measured to hurt
   // in this game's branching pattern); explicit `true` opts in. timeStop
@@ -831,6 +839,14 @@ function runIDAB(maxDepth, timeMsCap, cfg) {
       bestResult = r;
       prevScore = r.bestValue;
     }
+
+    // Yield once per completed iteration. In Cloudflare Workers this lets
+    // Date.now()/performance.now() advance ~1 ms; in Node and the browser
+    // it's effectively a no-op (those runtimes track time during sync code).
+    // The deadline re-check below converts the wall budget into a hard cap
+    // between iterations.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (performance.now() >= deadline) break;
   }
   return bestResult;
 }
@@ -1694,7 +1710,7 @@ async function chooseMove(cfg) {
       const eg = runEndgame();
       if (eg) return pickEps(eg.scores, 0, 0);
     }
-    const r = runIDAB(cfg.depth, cfg.timeMs, cfg);
+    const r = await runIDAB(cfg.depth, cfg.timeMs, cfg);
     return pickEps(r?.scores, 0, 0);
   }
   if (cfg.kind === 'mctsrave') {

@@ -40,7 +40,7 @@ export const AI_TIERS = {
   connector:   { kind: 'oneply',   evalName: 'simple' },
   concentrator:{ kind: 'oneply',   evalName: 'basic' },
   constructor: { kind: 'fixedab',  evalName: 'basic', depth: 3 },
-  coordinator: { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false },
+  coordinator: { kind: 'idab',     evalName: 'basic', timeMs: 12000, depth: 6, endgame: false },
   confiscator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy',  endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },

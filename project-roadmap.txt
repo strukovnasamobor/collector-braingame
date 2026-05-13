@@ -3,7 +3,7 @@ OFFLINE AND ONLINE AI TIERS
 1. Connector                { kind: 'oneply',   evalName: 'simple' }
 2. Concentrator             { kind: 'oneply',   evalName: 'basic' }
 3. Constructor              { kind: 'fixedab',  evalName: 'basic', depth: 3 }
-4. Coordinator              { kind: 'idab',     evalName: 'basic', timeMs: 12000, endgame: false } #timeMS per move (both place and eliminate)
+4. Coordinator              { kind: 'idab',     evalName: 'basic', timeMs: 12000, depth: 8, endgame: false } #timeMS per move (both place and eliminate)
 5. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }  #timeMS for placing + 2-4s for eliminating, simBudget=25000k is optimal and hiting before timeMs
 6. Conservator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 7. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
@@ -18,7 +18,7 @@ OFFLINE AND ONLINE AI TIERS
     - Conservator   - defenseHeavy: { placeOwn: 6, placeOpp: -2, placeDead: -2, elimOwn: -2, elimOpp: 2 }, flees opponent on placement
     - Cumulator     - collectHeavy: { placeOwn: 6, placeOpp:  0, placeDead: -2, elimOwn: -2, elimOpp: 2 }, ignores opponent on placement
     - Collector     - heavy:        { placeOwn: 6, placeOpp:  2, placeDead: -2, elimOwn: -2, elimOpp: 4 }, balanced offense/defense
-    - Curator     - = Collector
+    - Curator       = Collector
 - formula
     - PLACE phase:  weight = max(0.1, 1 + placeOwn·ownAdj  + placeOpp·oppAdj + placeDead·deadAdj)
     - ELIM phase:   weight = max(0.1, 1 + elimOwn·ownAdj   + elimOpp·oppAdj)
@@ -26,8 +26,23 @@ OFFLINE AND ONLINE AI TIERS
         - ownAdj - number of your own dots adjacent
         - oppAdj - number of opponent's dots adjacent
         - deadAdj - number of dead (eliminated) cells adjacent
+- in standard leaderboard exclude bots
+- in ranked leaderboard exclude players that didn't unlocked 8x8 board, rating desc → wins desc → draws desc → losses asc → coins desc → updatedAt desc
+- in standard game player with less coin is first
 - in ranked game player with lower ranking plays first, if Human vs Bot is a tie Human is always playing first, if Human vs Human tie then random
-- in ranked game matchmaking pool size = min(number_of_players_in_queue, 100) then choose closest by rating
+- in standard game matchmaking choose opponent closest by coins, only one bot closest by coins added to pool
+- in ranked game matchmaking pool size = min(number_of_players_in_queue, 100) then choose opponent closest by rating, only one bot closest by rating added to pool
+- fixed coins for bots
+1. Connector                100 BGC
+2. Concentrator             300 BGC
+3. Constructor              500 BGC
+4. Coordinator              600 BGC
+5. Confiscator              700 BGC
+6. Conservator              800 BGC
+7. Cumulator                900 BGC
+8. Collector                1000 BGC
+9. Curator                  2000 BGC
+*****10. Cogitator          3000 BGC
 
 - simulate tournament rankings: python tournament_sim.py --n 25 --prefix ""
     Final ratings (200 matches, 16169.5s wall):

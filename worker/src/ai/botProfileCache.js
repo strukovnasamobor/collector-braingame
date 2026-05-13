@@ -1,5 +1,5 @@
 // Per-isolate cache of bot player profiles. Bots have no queue docs;
-// matchmaking synthesizes virtual candidates and reads ratings here.
+// matchmaking synthesizes virtual candidates and reads ratings + coins here.
 //
 // Pass { forceFresh: true } to bypass the cache for read paths where
 // staleness is observable — namely ranked matchmaking, which selects the
@@ -7,8 +7,11 @@
 // invalidateBotProfile only invalidates the one isolate that ran the
 // finalize, so warm isolates can hold stale ratings indefinitely. Reading
 // fresh costs one Firestore read per bot tier per /run, which is trivial.
-// Standard mode picks uniformly at random and ignores ratings, so the
-// cache is fine there.
+//
+// `coins` returned here is the bot's fixed difficulty-proxy value set
+// manually in Firestore (Connector 100 … Curator 900 BGC). bumpPlayerCoins
+// in worker/src/index.js skips bots, so this value never changes from
+// gameplay — caching it indefinitely is safe.
 
 import { BOT_INITIAL_RATING, tierFromBotUid } from './bots';
 
@@ -33,7 +36,8 @@ async function readBotProfile(env, botUid, getDocument) {
   return {
     mu: Number(data.mu) || muFromDisplay(initialRating),
     sigma: Number(data.sigma) || DEFAULT_SIGMA,
-    rating: Number(data.rating) || initialRating
+    rating: Number(data.rating) || initialRating,
+    coins: Number(data.coins) || 0
   };
 }
 

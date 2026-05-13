@@ -1,1 +1,1 @@
-{ "kind": "idab", "evalName": "basic", "timeMs": 12000, "endgame": false }
+{ "kind": "idab", "evalName": "basic", "timeMs": 12000, "depth": 6, "endgame": false }

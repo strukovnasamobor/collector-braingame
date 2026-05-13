@@ -14,26 +14,31 @@ import { db } from '../../firebase';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-// Tiebreaker chain for ranked: rating desc → win-ratio desc → wins desc →
-// losses asc → most-recent-activity desc.
+// Tiebreaker chain for ranked: rating desc → wins desc → draws desc →
+// losses asc → coins desc → most-recent-activity desc. Coins act as the
+// final substantive tiebreaker before falling back to recency, so two
+// players with identical W/D/L records are separated by their economy
+// progress.
 function rankCompare(a, b) {
   const aR = Number(a.rating || 0);
   const bR = Number(b.rating || 0);
   if (aR !== bR) return bR - aR;
 
-  const aGames = Number(a.games || 0);
-  const bGames = Number(b.games || 0);
-  const aRatio = aGames > 0 ? Number(a.wins || 0) / aGames : 0;
-  const bRatio = bGames > 0 ? Number(b.wins || 0) / bGames : 0;
-  if (aRatio !== bRatio) return bRatio - aRatio;
-
   const aW = Number(a.wins || 0);
   const bW = Number(b.wins || 0);
   if (aW !== bW) return bW - aW;
 
+  const aD = Number(a.draws || 0);
+  const bD = Number(b.draws || 0);
+  if (aD !== bD) return bD - aD;
+
   const aL = Number(a.losses || 0);
   const bL = Number(b.losses || 0);
   if (aL !== bL) return aL - bL;
+
+  const aC = Number(a.coins || 0);
+  const bC = Number(b.coins || 0);
+  if (aC !== bC) return bC - aC;
 
   const aT = Date.parse(a.updatedAt || '') || 0;
   const bT = Date.parse(b.updatedAt || '') || 0;
@@ -132,11 +137,30 @@ export default function LeaderboardPage() {
 
   // Re-sort client-side per mode. Firestore's orderBy stays on `rating` so
   // the snapshot always returns the same set of docs; the standard view
-  // simply re-sorts that set by coins.
+  // simply re-sorts that set by coins. Bots are excluded from the standard
+  // leaderboard because they carry fixed coin values that would dominate
+  // the ranking — the standard ladder is "coins earned through gameplay",
+  // which bots no longer participate in. Ranked still shows bots since
+  // their Elo ratings are meaningful.
+  //
+  // Ranked is gated on the 8×8 unlock: ranked play only happens on 8×8, so
+  // players who haven't unlocked that grid have no rating worth ranking.
+  // Bots have all grids unlocked at seed time so they pass this filter.
   const sortedRows = useMemo(() => {
     if (!onlinePlayers) return null;
     const compare = mode === 'standard' ? coinCompare : rankCompare;
-    return [...onlinePlayers].sort(compare);
+    let filtered;
+    if (mode === 'standard') {
+      filtered = onlinePlayers.filter((p) => !(p.id || '').startsWith('bot:'));
+    } else {
+      filtered = onlinePlayers.filter((p) => {
+        const grids = Array.isArray(p.unlocks?.onlineGrids)
+          ? p.unlocks.onlineGrids.map(Number)
+          : [6];
+        return grids.includes(8);
+      });
+    }
+    return [...filtered].sort(compare);
   }, [onlinePlayers, mode]);
 
   const valueColumnLabel =
