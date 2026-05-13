@@ -7,14 +7,16 @@
 // Request:  { id, cfg, state, size, phase, lastPlaces, currentPlayer }
 //   `cfg` is a tier config object (same shape as values in AI_TIERS), e.g.
 //   { kind: 'mctsrave', simBudget: 25000, timeMs: 8000, endgame: true }
+//   { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, modelUrl: '...' }
 // Response: { id, move: { row, col } | null }  or { id, error }
 
 import { build } from 'esbuild';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const entry = path.resolve(here, '_entry.js');
+const repoRoot = path.resolve(here, '..', '..');
 
 // Bundle once at startup (~100ms) and import the result via a data: URL so
 // the harness always tunes the live engine source.
@@ -35,6 +37,45 @@ console.log = () => {};
 console.warn = () => {};
 console.error = () => {};
 
+// ─── PUCTAZ lazy initialization ─────────────────────────────────────────
+// The puctaz tier uses worker/src/ai/azMcts.js + a trained ONNX model.
+// Loaded on first puctaz request, cached for the lifetime of this process.
+let puctazPromise = null;
+async function ensurePuctaz(modelUrl) {
+  if (puctazPromise) return puctazPromise;
+  puctazPromise = (async () => {
+    const azNetUrl  = pathToFileURL(path.resolve(repoRoot, 'worker/src/ai/azNet.js')).href;
+    const azMctsUrl = pathToFileURL(path.resolve(repoRoot, 'worker/src/ai/azMcts.js')).href;
+    const azNetMod  = await import(azNetUrl);
+    const azMctsMod = await import(azMctsUrl);
+    const modelPath = path.resolve(repoRoot, modelUrl);
+    const net = await azNetMod.AzNet.loadFromFile(modelPath);
+    return { net, puctSearch: azMctsMod.puctSearch, pickMove: azMctsMod.pickMove };
+  })();
+  return puctazPromise;
+}
+
+function convertStateToAz(stateInput, size, phaseStr, currentPlayer, lastPlaces) {
+  // aiEngineCore state format → azMcts state format
+  const n2 = size * size;
+  const cells = new Int8Array(n2);
+  const dead  = new Uint8Array(n2);
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const idx = r * size + c;
+      const cell = stateInput[r][c];
+      cells[idx] = cell.player === 1 ? 1 : cell.player === 2 ? 2 : 0;
+      dead[idx]  = cell.eliminated ? 1 : 0;
+    }
+  }
+  const phase = phaseStr === 'eliminate' ? 1 : 0;
+  const side  = currentPlayer === 2 ? 2 : 1;
+  const lastIdx = (phase === 1 && lastPlaces)
+    ? lastPlaces.row * size + lastPlaces.col
+    : -1;
+  return { size, cells, dead, phase, side, lastIdx };
+}
+
 process.stdout.write(JSON.stringify({ ready: true }) + '\n');
 
 let buf = '';
@@ -54,10 +95,26 @@ async function handle(line) {
   let req;
   try { req = JSON.parse(line); } catch { return; }
   const { id, cfg, state, size, phase, lastPlaces, currentPlayer } = req;
-  const tierKey = `__tune__${id}`;
+
   try {
-    // reuseTree must be off — different games would otherwise share a stale
-    // tree snapshot from a previous match's final position.
+    if (cfg && cfg.kind === 'puctaz') {
+      const { net, puctSearch, pickMove } = await ensurePuctaz(cfg.modelUrl || 'worker/models/az_iter0_8x8.onnx');
+      const azState = convertStateToAz(state, size, phase, currentPlayer, lastPlaces);
+      const root = await puctSearch(azState, cfg.simBudget ?? 25000, net, {
+        batchSize: cfg.batchSize ?? 32,
+        cPuct: cfg.cPuct ?? 2.0,
+        timeMs: cfg.timeMs ?? 12000,
+      });
+      const moveIdx = pickMove(root, 0.0);
+      const out = (moveIdx === null || moveIdx === undefined || moveIdx < 0)
+        ? null
+        : { row: Math.floor(moveIdx / size), col: moveIdx % size };
+      process.stdout.write(JSON.stringify({ id, move: out }) + '\n');
+      return;
+    }
+
+    // Existing path: mctsrave / fixedab / oneply / idab via aiEngineCore.
+    const tierKey = `__tune__${id}`;
     AI_TIERS[tierKey] = { ...cfg, reuseTree: false };
     const move = await chooseAIMove({
       tier: tierKey, state, size, phase, lastPlaces, currentPlayer
@@ -65,7 +122,6 @@ async function handle(line) {
     delete AI_TIERS[tierKey];
     process.stdout.write(JSON.stringify({ id, move: move || null }) + '\n');
   } catch (err) {
-    delete AI_TIERS[tierKey];
     process.stdout.write(JSON.stringify({ id, error: String(err?.message || err) }) + '\n');
   }
 }

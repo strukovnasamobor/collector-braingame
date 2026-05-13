@@ -8,9 +8,10 @@ OFFLINE AND ONLINE AI TIERS
 6. Conservator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 7. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 8. Collector                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, endgameDepth: 12, personalityEndgame: false, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-- Only in online games:
+- only in online games:
 9. Curator                  = collector + opening book + MAST table + feature-weight learning
-***** 10. Cogitator               { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
+- only for online games on 8x8 board:
+*****10. Cogitator               { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
 - in offline and online standard game on 6x6 board all AI tiers - timeMs: 6000
 - policy:
     - Confiscator   - attackHeavy:  { placeOwn: 2, placeOpp:  4, placeDead: -2, elimOwn: -2, elimOpp: 4 }, chases opponent on placement

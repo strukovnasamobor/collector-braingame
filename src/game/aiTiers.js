@@ -25,6 +25,12 @@
 //                     UI must NOT list it as a selectable opponent — the learning
 //                     components only have effect when the cloudflare worker
 //                     injects cfg.curatorState before the search.
+//   3) AlphaZero ladder (online-only):
+//      cogitator    — kind:'puctaz'; PUCT MCTS with a trained ValuePolicyNet
+//                     (policy + value heads). No rollouts, no RAVE. Model
+//                     loaded via cfg.modelUrl at first move by the worker.
+//                     Browser engine has no ONNX runtime → entry exists for
+//                     API parity but is not selectable offline.
 // `personalityEndgame: true` opts a tier into the personality-aware endgame
 // solver: positive margins are clamped to +1 (a win is a win; no over-attacking
 // for extra margin) and the personality weight breaks ties among equally
@@ -39,12 +45,12 @@ export const AI_TIERS = {
   conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
-  curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
+  curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
+  cogitator:   { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
 };
 
-// Offline-visible tier order. Excludes 'curator' — its learning components
-// (opening book + MAST + learned policy weights) live in Firestore and are
-// only available when the cloudflare worker injects cfg.curatorState.
+// Offline-visible tier order. Excludes 'curator' (Firestore-dependent) and
+// 'cogitator' (ONNX runtime via worker only) — both need server resources.
 export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector'];
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval

@@ -1,0 +1,10 @@
+{
+  "kind": "puctaz",
+  "simBudget": 25000,
+  "timeMs": 12000,
+  "endgame": true,
+  "endgameDepth": 12,
+  "reuseTree": true,
+  "batchSize": 32,
+  "modelUrl": "worker/models/az_iter0_8x8.onnx"
+}

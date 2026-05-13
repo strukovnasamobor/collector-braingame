@@ -192,6 +192,7 @@ export async function puctSearch(state, simBudget, net, opts = {}) {
   const dirichletAlpha   = opts.dirichletAlpha   ?? 0.3;
   const dirichletEps     = opts.dirichletEps     ?? 0.25;
   const rng              = opts.rng              ?? Math.random;
+  const timeMs           = opts.timeMs           ?? null;   // wall-clock cap (ms); whichever hits first vs simBudget
 
   const size = state.size;
   const n2 = size * size;
@@ -200,8 +201,10 @@ export async function puctSearch(state, simBudget, net, opts = {}) {
 
   let simsDone = 0;
   let noiseInjected = false;
+  const tStart = (timeMs !== null) ? Date.now() : 0;
 
   while (simsDone < simBudget) {
+    if (timeMs !== null && Date.now() - tStart >= timeMs) break;
     const thisBatch = Math.min(batchSize, simBudget - simsDone);
     const descents = [];
     for (let i = 0; i < thisBatch; i++) {

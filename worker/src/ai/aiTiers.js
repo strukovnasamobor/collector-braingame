@@ -23,6 +23,11 @@
 //                     (online-only; aiEngine reads cfg.curatorState injected
 //                     by the worker. Offline play has no state doc → falls back
 //                     to default heavy and behaves identically to `collector`.)
+//   3) AlphaZero ladder (online-only):
+//      cogitator    — kind:'puctaz'; PUCT MCTS with a trained ValuePolicyNet
+//                     (policy + value heads). No rollouts, no RAVE. The policy
+//                     head provides PUCT priors; the value head replaces leaf
+//                     rollouts. Model loaded via cfg.modelUrl at first move.
 // `personalityEndgame: true` opts a tier into the personality-aware endgame
 // solver: positive margins are clamped to +1 (a win is a win; no over-attacking
 // for extra margin) and the personality weight breaks ties among equally
@@ -37,9 +42,15 @@ export const AI_TIERS = {
   conservator: { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
-  curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false }
+  curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
+  cogitator:   { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
 };
 
+// Note: 'cogitator' is defined in AI_TIERS for API parity but excluded from
+// TIER_ORDER until the `kind: 'puctaz'` dispatch arm and BOT_DISPLAY/
+// BOT_INITIAL_RATING entries are wired up. ALL_TIERS (bots.js) tracks
+// TIER_ORDER, so omitting cogitator here keeps the matchmaker + seedBots
+// loops from crashing on undefined BOT_DISPLAY['cogitator'].
 export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector', 'curator'];
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval
