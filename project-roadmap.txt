@@ -106,7 +106,7 @@ GAMIFICATION
 - spending coins
     - grid size online games
        - 1000 coins for 8x8 online grid
-       - 10 000 coins for 10x10 online grid
+       - 5000 coins for 10x10 online grid
 - protected coins and accesing grid sizes with backend
 
 TESTS OF EARNING/LOSING BGC
