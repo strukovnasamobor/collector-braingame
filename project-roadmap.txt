@@ -41,8 +41,8 @@ OFFLINE AND ONLINE AI TIERS
 6. Conservator              800 BGC
 7. Cumulator                900 BGC
 8. Collector                1000 BGC
-9. Curator                  2000 BGC
-*****10. Cogitator          3000 BGC
+9. Curator                  5000 BGC
+*****10. Cogitator          10000 BGC
 
 - simulate tournament rankings: python tournament_sim.py --n 25 --prefix ""
     Final ratings (200 matches, 16169.5s wall):

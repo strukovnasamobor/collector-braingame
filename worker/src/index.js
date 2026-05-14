@@ -2206,7 +2206,7 @@ async function handleGameAction(env, authUser, body) {
   return errorResponse('Unknown game action.', 400);
 }
 
-const GRID_UNLOCK_COSTS = { 8: 1000, 10: 5000 };
+const GRID_UNLOCK_COSTS = { 8: 1000, 10: 10000 };
 
 async function handleUnlockGrid(env, authUser, body) {
   const size = Number(body.size);
