@@ -91,6 +91,47 @@ process.stdin.on('data', (chunk) => {
 });
 process.stdin.on('end', () => process.exit(0));
 
+async function callRemoteCogitator(baseUrl, cfg, state, size, phase, lastPlaces, currentPlayer) {
+  const n2 = size * size;
+  const cells = new Array(n2);
+  const dead  = new Array(n2);
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const idx = r * size + c;
+      const cell = state[r][c];
+      cells[idx] = cell.player === 1 ? 1 : cell.player === 2 ? 2 : 0;
+      dead[idx]  = cell.eliminated ? 1 : 0;
+    }
+  }
+  const phaseNum = phase === 'eliminate' ? 1 : 0;
+  const sideNum  = currentPlayer === 2 ? 2 : 1;
+  const lastIdx  = (phaseNum === 1 && lastPlaces)
+    ? lastPlaces.row * size + lastPlaces.col
+    : -1;
+
+  const headers = { 'content-type': 'application/json' };
+  if (process.env.COGITATOR_TOKEN) headers['x-cogitator-token'] = process.env.COGITATOR_TOKEN;
+  const resp = await fetch(baseUrl.replace(/\/+$/, '') + '/cogitate', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      cells, dead, size, phase: phaseNum, side: sideNum, last_idx: lastIdx,
+      sim_budget: cfg.simBudget ?? 1500,
+      time_ms:    cfg.timeMs    ?? 6000,
+      batch_size: cfg.batchSize ?? 32,
+      endgame:        !!cfg.endgame,
+      endgame_depth:  cfg.endgameDepth ?? 12,
+      // No game_id — keep reuseTree off for tournament fairness (the
+      // mctsrave dispatch also forces reuseTree: false via the override
+      // below). This way every move is judged on a fresh search.
+    }),
+  });
+  if (!resp.ok) throw new Error(`cogitator service ${resp.status}`);
+  const data = await resp.json();
+  if (data.move === null || data.move === undefined || data.move < 0) return null;
+  return { row: Math.floor(data.move / size), col: data.move % size };
+}
+
 async function handle(line) {
   let req;
   try { req = JSON.parse(line); } catch { return; }
@@ -98,6 +139,17 @@ async function handle(line) {
 
   try {
     if (cfg && cfg.kind === 'puctaz') {
+      // If COGITATOR_URL is set in env, dispatch puctaz through the live
+      // Cloud Run service — this exercises the actual production path.
+      // Otherwise fall back to in-process onnxruntime-node (faster iteration
+      // for offline strength sanity, but doesn't catch production-only bugs).
+      if (process.env.COGITATOR_URL) {
+        const out = await callRemoteCogitator(
+          process.env.COGITATOR_URL, cfg, state, size, phase, lastPlaces, currentPlayer
+        );
+        process.stdout.write(JSON.stringify({ id, move: out }) + '\n');
+        return;
+      }
       const { net, puctSearch, pickMove } = await ensurePuctaz(cfg.modelUrl || 'worker/models/az_iter0_8x8.onnx');
       const azState = convertStateToAz(state, size, phase, currentPlayer, lastPlaces);
       const root = await puctSearch(azState, cfg.simBudget ?? 25000, net, {

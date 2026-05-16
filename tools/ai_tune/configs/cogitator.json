@@ -1,6 +1,6 @@
 {
   "kind": "puctaz",
-  "simBudget": 25000,
+  "simBudget": 2500,
   "timeMs": 12000,
   "endgame": true,
   "endgameDepth": 12,

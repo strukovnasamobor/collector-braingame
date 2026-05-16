@@ -9,7 +9,8 @@
     "tail": "wrangler tail"
   },
   "dependencies": {
-    "jose": "^6.2.3"
+    "jose": "^6.2.3",
+    "onnxruntime-web": "1.16.3"
   },
   "devDependencies": {
     "onnxruntime-node": "^1.26.0",

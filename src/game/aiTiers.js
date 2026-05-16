@@ -46,12 +46,19 @@ export const AI_TIERS = {
   cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
   curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
-  cogitator:   { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
+  cogitator:   { kind: 'puctaz',   simBudget: 2500,  timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'az_iter0_8x8.onnx' }
 };
 
 // Offline-visible tier order. Excludes 'curator' (Firestore-dependent) and
 // 'cogitator' (ONNX runtime via worker only) — both need server resources.
 export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector'];
+
+// Mirror of worker per-tier grid restriction. Kept here for any UI that
+// shows tier eligibility hints to the user.
+//   cogitator: [8] — online-only AlphaZero tier; 8×8 board only.
+export const TIER_BOARD_SIZES = {
+  cogitator: [8],
+};
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval
 export const ENDGAME_THRESHOLD = 12;

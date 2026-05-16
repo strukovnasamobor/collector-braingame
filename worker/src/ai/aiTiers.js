@@ -43,15 +43,21 @@ export const AI_TIERS = {
   cumulator:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: true,  mctsC: 0.5, raveK: 3000 },
   collector:   { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, endgameDepth: 12, reuseTree: true, rolloutShortcut: false, personalityEndgame: false, mctsC: 0.5, raveK: 3000 },
   curator:     { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy',        endgame: true, reuseTree: true, rolloutShortcut: false },
-  cogitator:   { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
+  cogitator:   { kind: 'puctaz',   simBudget: 2500,  timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'az_iter0_8x8.onnx' }
 };
 
-// Note: 'cogitator' is defined in AI_TIERS for API parity but excluded from
-// TIER_ORDER until the `kind: 'puctaz'` dispatch arm and BOT_DISPLAY/
-// BOT_INITIAL_RATING entries are wired up. ALL_TIERS (bots.js) tracks
-// TIER_ORDER, so omitting cogitator here keeps the matchmaker + seedBots
-// loops from crashing on undefined BOT_DISPLAY['cogitator'].
-export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector', 'curator'];
+// Online bot pool order. 'cogitator' is included here so the matchmaker can
+// pick it, but it's grid-restricted to 8×8 via TIER_BOARD_SIZES below — the
+// matchmaker's per-tier filter handles standard mode on 6×6/10×10 boards.
+// Ranked mode is always 8×8 so no special-casing needed there.
+export const TIER_ORDER = ['connector', 'concentrator', 'constructor', 'coordinator', 'confiscator', 'conservator', 'cumulator', 'collector', 'curator', 'cogitator'];
+
+// Per-tier grid restriction. Tiers listed here can only be matched on the
+// specified grid sizes. Tiers without an entry play on all STANDARD_BOT_GRID_SIZES.
+//   cogitator: [8] — ONNX model is 8×8-only.
+export const TIER_BOARD_SIZES = {
+  cogitator: [8],
+};
 
 // Endgame solver (Advanced only) — exact αβ to terminal, no eval
 export const ENDGAME_THRESHOLD = 12;

@@ -16,17 +16,15 @@ import {
   claimGameTimeout,
   finalizeRankedResult,
   leaveOnlineGame,
-  sendGameHeartbeat,
   submitGameMove,
   submitGameTimeout
 } from '../services/firebaseActions';
 
-const HEARTBEAT_INTERVAL_MS = 10 * 1000;
 const CLAIM_TIMEOUT_POLL_MS = 5 * 1000;
 // HTTP submitGameMove retry budget: 1 initial attempt + 2 silent retries.
-// Most rejections are transient races (heartbeat bumping updateTime, opponent's
-// move landing the same tick); a short backoff usually lets the Firestore
-// snapshot catch up so attempt 2 or 3 succeeds without surfacing the alert.
+// Transient 4xx/5xx races on the opponent's move usually clear by the next
+// snapshot tick — a short backoff lets attempt 2 or 3 succeed without
+// surfacing the alert.
 const MAX_MOVE_ATTEMPTS = 3;
 const MOVE_RETRY_DELAY_MS = 300;
 
@@ -237,22 +235,6 @@ export function useOnlineGame(gameId) {
       })
       .catch(() => { });
   }, [data]);
-
-  useEffect(() => {
-    if (!gameId || !user || !myPlayerNumber) return;
-    if (!data || data.status !== 'active') return;
-    let cancelled = false;
-    const tick = () => {
-      if (cancelled) return;
-      sendGameHeartbeat({ gameId }).catch(() => {});
-    };
-    tick();
-    const interval = setInterval(tick, HEARTBEAT_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [gameId, user, myPlayerNumber, data?.status]);
 
   // Opponent-stalling defense: when it's NOT my turn and the active player has run past
   // their server-tracked deadline, claim the timeout so a non-cooperative client can't

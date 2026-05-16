@@ -76,10 +76,6 @@ export async function notifyGameJoin({ gameId }) {
   return callBackend('/game/join', { gameId });
 }
 
-export async function sendGameHeartbeat({ gameId }) {
-  return callBackend('/game/heartbeat', { gameId });
-}
-
 export async function enqueueForMatch({ mode, gridSize, timerEnabled }) {
   return callBackend('/matchmaking/enqueue', { mode, gridSize, timerEnabled });
 }

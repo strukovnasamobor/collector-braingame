@@ -1,7 +1,7 @@
 // Bot-related constants for the online AI opponents. Imported by the worker
 // (matchmaking, seeding, MatchBot DO).
 
-import { TIER_ORDER } from './aiTiers';
+import { TIER_ORDER, TIER_BOARD_SIZES } from './aiTiers';
 
 export const BOT_UID_PREFIX = 'bot:';
 export const botUidFor = (tier) => `${BOT_UID_PREFIX}${tier}`;
@@ -17,7 +17,8 @@ export const BOT_DISPLAY = {
   conservator: 'Conservator 🤖',
   cumulator:   'Cumulator 🤖',
   collector:   'Collector 🤖',
-  curator:     'Curator 🤖'
+  curator:     'Curator 🤖',
+  cogitator:   'Cogitator 🤖'
 };
 
 // All bots start at the same rating (1000) and let the live Elo system separate
@@ -34,7 +35,8 @@ export const BOT_INITIAL_RATING = {
   conservator: 1000,
   cumulator:   1000,
   collector:   1000,
-  curator:     1000
+  curator:     1000,
+  cogitator:   1000
 };
 
 // Standard gridSizes that bots maintain queue presence for. Online play always
@@ -47,3 +49,13 @@ export const standardBotQueueDocId = (tier, gridSize) => `${botUidFor(tier)}_${g
 export const rankedBotQueueDocId = (tier) => botUidFor(tier);
 
 export const ALL_TIERS = TIER_ORDER;
+
+// Per-tier grid eligibility: cogitator (puctaz) is only usable on 8×8 because
+// the trained ONNX model has size 8 baked in. The matchmaker uses this to
+// skip ineligible tiers when picking the closest-fit bot for the player's
+// chosen grid size.
+export function tierAvailableForGrid(tier, gridSize) {
+  const restriction = TIER_BOARD_SIZES[tier];
+  if (!Array.isArray(restriction)) return true;  // no restriction → always available
+  return restriction.includes(gridSize);
+}

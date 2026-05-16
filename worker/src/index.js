@@ -8,6 +8,7 @@ import {
   STANDARD_BOT_GRID_SIZES,
   isBotUid,
   tierFromBotUid,
+  tierAvailableForGrid,
   botUidFor,
   standardBotQueueDocId,
   rankedBotQueueDocId
@@ -54,8 +55,6 @@ const MATCHMAKING_STALE_MS_BY_MODE = {
   standard: 30 * 1000
 };
 const MATCHMAKING_STALE_MS = 30 * 1000;
-const STALE_GAME_THRESHOLD_MS = 60 * 1000;
-const STALE_STANDARD_GAME_THRESHOLD_MS = 5 * 60 * 1000;
 const TURN_DURATION_MS = 30 * 1000;
 // Clients submit moves via the worker, which adds RTT. 2s covers normal jitter while keeping
 // the post-deadline abuse window small (was 5s, which let fast clients steal a free turn).
@@ -1234,6 +1233,9 @@ async function handleMatchmakingAction(env, authUser, body) {
       let bestProfile = null;
       let bestDiff = Infinity;
       for (const tier of ALL_TIERS) {
+        // Skip tiers that can't play this grid size (e.g. cogitator/puctaz
+        // is 8×8-only because the trained ONNX model has size 8 baked in).
+        if (!tierAvailableForGrid(tier, selfGridSize)) continue;
         const uid = botUidFor(tier);
         const profile = await getBotProfile(env, uid, getDocument, { forceFresh });
         const botAttr = mode === 'standard'
@@ -1742,9 +1744,10 @@ async function finalizeMatchCleanup(env, game) {
 // timeout occurred during the eliminate sub-phase. Used by both the self-report
 // timeout endpoint and the opponent-claim / cron-sweeper paths.
 //
-// Retries on updateTime precondition failure so that heartbeat-spam from the current
-// player can't stall the timeout enforcement — but only as long as the target player
-// still hasn't actually moved (currentPlayer / phase / their placement count unchanged).
+// Retries on updateTime precondition failure so that a concurrent move,
+// leave, or claim-timeout from the opponent doesn't stall the enforcement —
+// but only as long as the target player still hasn't actually moved
+// (currentPlayer / phase / their placement count unchanged).
 async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) {
   const initialTarget = gameDoc.data.currentPlayer;
   const initialPhase = gameDoc.data.phase;
@@ -1798,6 +1801,33 @@ async function applyTurnTimeout(env, gameDoc, gameId, { maxAttempts = 3 } = {}) 
 
     try {
       if (newCount >= 2) {
+        const otherKey = targetPlayerNumber === 1 ? 'p2' : 'p1';
+        const otherHasStrikes = (timeouts[otherKey] || 0) >= 1;
+
+        if (otherHasStrikes) {
+          // Both players have stalled on consecutive turns — a successful
+          // move would have reset that player's count to 0, so non-zero
+          // strikes for *both* means neither side has actually played
+          // since the strikes began. Treat as mutual abandonment: cancel
+          // the game (no winner, no rating change, no coin payout) rather
+          // than crowning whichever player happened to be on the clock
+          // last as the "winner".
+          const cancelledGame = {
+            ...current,
+            status: 'cancelled',
+            cancelledReason: 'both_abandoned',
+            cancelledAt: new Date().toISOString(),
+            gameStateJSON: JSON.stringify(revertedState),
+            placementHistory: revertedHistory,
+            lastPlaces: null,
+            timeouts: { ...timeouts, [myKey]: newCount },
+            turnDeadlineMs: null
+          };
+          await writeDocument(env, 'games', gameId, cancelledGame, gameDoc.updateTime);
+          await finalizeMatchCleanup(env, cancelledGame);
+          return { applied: true, finished: true };
+        }
+
         const s1 = getBiggestGroup(revertedState, size, 1);
         const s2 = getBiggestGroup(revertedState, size, 2);
         const winner = targetPlayerNumber === 1 ? 2 : 1;
@@ -2175,34 +2205,6 @@ async function handleGameAction(env, authUser, body) {
     return corsResponse({ ok: true });
   }
 
-  if (action === 'heartbeat') {
-    const game = await getDocument(env, 'games', gameId);
-    if (!game) return corsResponse({ ok: true });
-    const current = game.data;
-    if (current.status !== 'active') return corsResponse({ ok: true });
-    if (current.player1uid !== authUser.uid && current.player2uid !== authUser.uid) {
-      return errorResponse('Only participants can heartbeat.', 403);
-    }
-    const playerNumber = current.player1uid === authUser.uid ? 1 : 2;
-    const fieldPath = `lastSeenP${playerNumber}Ms`;
-    try {
-      // Field-mask write: only lastSeenP{n}Ms is touched, no precondition. Concurrent moves
-      // and leaves are unaffected by heartbeat traffic, eliminating the move-retry storm
-      // a heartbeat-spammer could otherwise force on the opponent.
-      await writeDocument(
-        env,
-        'games',
-        gameId,
-        { [fieldPath]: Date.now() },
-        null,
-        { updateMask: [fieldPath] }
-      );
-    } catch (_) {
-      // Best-effort. The cron sweep is the ultimate backstop.
-    }
-    return corsResponse({ ok: true });
-  }
-
   return errorResponse('Unknown game action.', 400);
 }
 
@@ -2366,6 +2368,31 @@ async function handleRequest(request, env) {
   if (request.method !== 'POST') return errorResponse('Method not allowed.', 405);
 
   const url = new URL(request.url);
+
+  // Dev-only test endpoint for Cogitator (puctaz) — bypasses auth + rate limit.
+  // Body: { state: 2D array of {player, eliminated}, size, phase: 'place'|'eliminate',
+  //         lastPlaces: {row, col}|null, currentPlayer: 1|2 }
+  // Returns: { move: {row, col}|null, ms: number }
+  if (url.pathname === '/dev/cogitator-move') {
+    if (env.ENVIRONMENT === 'production') return errorResponse('Not found.', 404);
+    const body = await getRequestJson(request);
+    const t0 = Date.now();
+    try {
+      const move = await chooseBotMove({
+        tier: 'cogitator',
+        state: body.state,
+        size: body.size,
+        phase: body.phase,
+        lastPlaces: body.lastPlaces || null,
+        currentPlayer: body.currentPlayer,
+        env,
+      });
+      return corsResponse({ move, ms: Date.now() - t0 });
+    } catch (err) {
+      return errorResponse(`cogitator error: ${err?.message || err}`, 500);
+    }
+  }
+
   const authUser = await verifyFirebaseIdToken(request, env);
   const body = await getRequestJson(request);
 
@@ -2408,8 +2435,7 @@ async function handleRequest(request, env) {
     url.pathname === '/game/timeout' ||
     url.pathname === '/game/claim-timeout' ||
     url.pathname === '/game/leave' ||
-    url.pathname === '/game/join' ||
-    url.pathname === '/game/heartbeat'
+    url.pathname === '/game/join'
   ) {
     const action = url.pathname.split('/').pop();
     return handleGameAction(env, authUser, { ...body, action });
@@ -2457,11 +2483,12 @@ async function sweepStaleGames(env) {
 
   for (const game of games) {
     const data = game.data || {};
-    const isRanked = data.mode === 'ranked';
 
-    // Turn-deadline enforcement: if the active player blew through their per-turn budget
-    // (timer-enabled games only), force-strike them via applyTurnTimeout. Done first because
-    // it's the cheap, common case.
+    // Turn-deadline enforcement is the only liveness signal: if the active
+    // player blew through their per-turn budget (timer-enabled games only),
+    // force-strike them via applyTurnTimeout. Silent disconnects that don't
+    // pass a deadline are intentionally left alone so a brief network blip
+    // doesn't cost a player the match — they can reconnect and continue.
     const deadline = Number(data.turnDeadlineMs);
     if (data.timerEnabled && Number.isFinite(deadline) && deadline > 0
         && now > deadline + TURN_DEADLINE_GRACE_MS) {
@@ -2470,45 +2497,6 @@ async function sweepStaleGames(env) {
       } catch (_) {
         // Race: a real move, leave, or claim-timeout landed first. Skip; next tick reassesses.
       }
-      continue;
-    }
-
-    const cutoff = now - (isRanked ? STALE_GAME_THRESHOLD_MS : STALE_STANDARD_GAME_THRESHOLD_MS);
-    const createdFloor = Number(data.createdAtMs) || Date.parse(data.createdAt || '') || now;
-    const lastP1 = Number(data.lastSeenP1Ms) || createdFloor;
-    const lastP2 = Number(data.lastSeenP2Ms) || createdFloor;
-    let p1Stale = lastP1 < cutoff;
-    let p2Stale = lastP2 < cutoff;
-
-    // Bot players are driven by Durable Objects, not by client heartbeats —
-    // their lastSeenP*Ms is never refreshed, so the heartbeat-based stale
-    // check would falsely forfeit them ~60 s into every bot match. Treat
-    // bots as always alive here; if a MatchBot DO is genuinely stuck the
-    // human can still claim a turn-deadline timeout via /game/timeout.
-    if (p1Stale && isBotUid(data.player1uid)) p1Stale = false;
-    if (p2Stale && isBotUid(data.player2uid)) p2Stale = false;
-
-    if (!p1Stale && !p2Stale) continue;
-
-    try {
-      if (!isRanked || (p1Stale && p2Stale)) {
-        // Standard: always cancel (no rating consequence). Ranked w/ both silent: same.
-        const cancelledGame = {
-          ...data,
-          status: 'cancelled',
-          cancelledReason: isRanked ? 'both_abandoned' : 'standard_abandoned',
-          cancelledAt: new Date().toISOString()
-        };
-        await writeDocument(env, 'games', game.id, cancelledGame, game.updateTime);
-        await finalizeMatchCleanup(env, cancelledGame);
-      } else {
-        const staleUid = p1Stale ? data.player1uid : data.player2uid;
-        if (staleUid) {
-          await applyRankedForfeit(env, game, game.id, staleUid);
-        }
-      }
-    } catch (_) {
-      // Race: another writer (a leave call, a final move) beat us. Skip; next tick will reassess.
     }
   }
 }
@@ -2772,7 +2760,12 @@ export class MatchBot {
         phase: game.data.phase,
         lastPlaces: game.data.lastPlaces,
         currentPlayer: cfg.botPlayerNumber,
-        curatorState
+        curatorState,
+        env: this.env,
+        // Stable per-game key so the Cogitator service can reuse its MCTS tree
+        // across consecutive moves of this match. MatchBot DO is named by
+        // gameId via idFromName, so state.id.name = gameId.
+        gameId: this.state.id.name,
       });
     } catch (err) {
       searchError = err;

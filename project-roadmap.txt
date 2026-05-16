@@ -6,12 +6,12 @@ OFFLINE AND ONLINE AI TIERS
 4. Coordinator              { kind: 'idab',     evalName: 'basic', timeMs: 12000, depth: 6, endgame: false } #timeMS per move (both place and eliminate)
 5. Confiscator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'attackHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }  #timeMS for placing + 2-4s for eliminating, simBudget=25000k is optimal and hiting before timeMs
 6. Conservator              { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'defenseHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
-7. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'collectHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
+7. Cumulator                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000,policy: 'collectHeavy', endgame: true, endgameDepth: 12, personalityEndgame: true, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 8. Collector                { kind: 'mctsrave', simBudget: 25000, timeMs: 12000, policy: 'heavy', endgame: true, endgameDepth: 12, personalityEndgame: false, reuseTree: true, rolloutShortcut: false, MCTS_C = 0.5, RAVE_K = 3000 }
 - only in online games:
 9. Curator                  = collector + opening book + MAST table + feature-weight learning
 - only for online games on 8x8 board:
-*****10. Cogitator               { kind: 'puctaz',   simBudget: 25000, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, modelUrl: 'models/az_iter0_8x8.onnx' }
+10. Cogitator               { kind: 'puctaz',   simBudget: 2500, timeMs: 12000, endgame: true, endgameDepth: 12, reuseTree: true, batchSize: 32, model_file_path: 'models/az_iter0_8x8.onnx', url: 'https://cogitator-472116048566.us-central1.run.app' }
 - in offline and online standard game on 6x6 board all AI tiers - timeMs: 6000
 - policy:
     - Confiscator   - attackHeavy:  { placeOwn: 2, placeOpp:  4, placeDead: -2, elimOwn: -2, elimOpp: 4 }, chases opponent on placement
@@ -41,8 +41,8 @@ OFFLINE AND ONLINE AI TIERS
 6. Conservator              800 BGC
 7. Cumulator                900 BGC
 8. Collector                1000 BGC
-9. Curator                  5000 BGC
-*****10. Cogitator          10000 BGC
+9. Curator                 10000 BGC
+10. Cogitator             100000 BGC
 
 - simulate tournament rankings: python tournament_sim.py --n 25 --prefix ""
     Final ratings (200 matches, 16169.5s wall):
@@ -116,3 +116,6 @@ TESTS OF EARNING/LOSING BGC
 + losing by leaving
 + losimg by disapearing
 + buying boards
+
+GOOGLE RUN DEPOLOY
+- gcloud run deploy cogitator --source . --region us-central1 --allow-unauthenticated --memory 1Gi --cpu 2 --timeout 30s --max-instances 100

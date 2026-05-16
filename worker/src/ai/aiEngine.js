@@ -1812,9 +1812,15 @@ function initFromState(stateInput, gridSize, pPhase, lastPlaces, currentPlayer) 
 // hooks and behaves identically to the corresponding non-Curator tier
 // (i.e., Curator falls back to plain `heavy` policy). The browser engine
 // always omits it, which is why the offline UI doesn't list the tier.
-export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer, curatorState }) {
+export async function chooseAIMove({ tier, state: stateInput, size: gridSize, phase: pPhase, lastPlaces, currentPlayer, curatorState, env, gameId }) {
   const baseCfg = AI_TIERS[tier];
   if (!baseCfg) return null;
+  // AlphaZero PUCT path: bypasses the module-level state machinery (cells/dead/
+  // tt/etc.) used by oneply/fixedab/idab/mctsrave. Calls the external Cogitator
+  // service (Cloud Run) over HTTPS — see runPuctaz below.
+  if (baseCfg.kind === 'puctaz') {
+    return runPuctaz(baseCfg, stateInput, gridSize, pPhase, lastPlaces, currentPlayer, env, gameId);
+  }
   // Per-call cfg surfaces tier name (so chooseMove / runMCTSRave can branch
   // on cfg.tier) and the optional Curator state.
   const cfg = curatorState
@@ -1826,4 +1832,69 @@ export async function chooseAIMove({ tier, state: stateInput, size: gridSize, ph
   const r = (moveIdx / size) | 0;
   const c = moveIdx - r * size;
   return { row: r, col: c };
+}
+
+// ── AlphaZero PUCT dispatch (puctaz) ────────────────────────────────────────
+// Calls the external Cogitator inference service (Cloud Run). The service URL
+// is read from env.COGITATOR_URL — set in wrangler.toml [vars].
+//
+// We tried ONNX-in-Worker first (onnxruntime-web with WASM) and hit a hard
+// Cloudflare runtime limit: ort uses dynamic ES module imports for backend
+// dispatch, and Workers don't allow dynamic import() of external URLs. The
+// external-service architecture avoids all WASM/runtime constraints — the
+// Worker just proxies state to the service over HTTPS.
+async function runPuctaz(cfg, stateInput, gridSize, pPhase, lastPlaces, currentPlayer, env, gameId) {
+  if (!env || !env.COGITATOR_URL) {
+    throw new Error('puctaz: COGITATOR_URL not set in wrangler.toml [vars]');
+  }
+
+  // Convert input state to flat JSON arrays for the service.
+  const n2 = gridSize * gridSize;
+  const cells = new Array(n2);
+  const dead  = new Array(n2);
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      const idx = r * gridSize + c;
+      const cell = stateInput[r][c];
+      cells[idx] = cell.player === 1 ? 1 : cell.player === 2 ? 2 : 0;
+      dead[idx]  = cell.eliminated ? 1 : 0;
+    }
+  }
+  const phase = pPhase === 'eliminate' ? 1 : 0;
+  const side  = currentPlayer === 2 ? 2 : 1;
+  const lastIdx = (phase === 1 && lastPlaces)
+    ? lastPlaces.row * gridSize + lastPlaces.col
+    : -1;
+
+  const body = {
+    cells, dead,
+    size: gridSize, phase, side, last_idx: lastIdx,
+    sim_budget: cfg.simBudget ?? 25000,
+    time_ms:    cfg.timeMs    ?? 12000,
+    batch_size: cfg.batchSize ?? 32,
+    // Optional features the service honors when present:
+    endgame:       !!cfg.endgame,
+    endgame_depth: cfg.endgameDepth ?? 12,
+    // Tree reuse needs a stable per-game key. Worker passes the MatchBot DO's
+    // gameId; the dev endpoint omits it (each /dev/cogitator-move is treated
+    // as a fresh game). Without game_id the service skips the cache.
+  };
+  if (gameId) body.game_id = gameId;
+
+  const headers = { 'content-type': 'application/json' };
+  // Shared-secret auth. Worker secret is set via `wrangler secret put
+  // COGITATOR_TOKEN`. If unset (e.g. local dev), no header sent; the service
+  // also allows unauthenticated when its env var is unset.
+  if (env.COGITATOR_TOKEN) headers['x-cogitator-token'] = env.COGITATOR_TOKEN;
+  const resp = await fetch(env.COGITATOR_URL.replace(/\/+$/, '') + '/cogitate', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new Error(`puctaz: cogitator service ${resp.status}`);
+  }
+  const data = await resp.json();
+  if (data.move === null || data.move === undefined || data.move < 0) return null;
+  return { row: Math.floor(data.move / gridSize), col: data.move % gridSize };
 }

@@ -8,6 +8,10 @@ FIREBASE_PROJECT_ID = "collector-braingame"
 # missing or throws, production 429s the request instead of silently allowing it.
 # Override to "development" in any preview/local config that omits the binding.
 ENVIRONMENT = "production"
+# Cogitator (puctaz) inference service URL. Cloud Run-hosted, calls /cogitate
+# with the current state and returns a move. Replace with your actual Run URL
+# after `gcloud run deploy`. Local-dev value can point at a local uvicorn.
+COGITATOR_URL = "https://cogitator-472116048566.us-central1.run.app"
 
 [triggers]
 # "* * * * *"   — every minute: sweep stale games, refresh bot queue heartbeats.

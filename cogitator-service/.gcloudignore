@@ -1,0 +1,9 @@
+# Files NOT to upload to Cloud Build / Cloud Run.
+.git
+.gitignore
+.gcloudignore
+__pycache__
+*.pyc
+.venv
+.env
+README.md

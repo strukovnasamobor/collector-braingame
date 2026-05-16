@@ -23,6 +23,11 @@ dist-ssr
 *.sln
 *.sw?
 
+# env files
+.env
+.env.local
+.env.production
+
 # Firebase
 .firebase/*
 firebase.js
@@ -38,6 +43,3 @@ android/app/release/*
 # Cloudflare Worker secrets
 worker/.dev.vars
 worker/node_modules
-
-# Production env (Vite reads at build time)
-.env.production
