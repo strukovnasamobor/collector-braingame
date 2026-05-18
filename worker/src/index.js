@@ -1974,7 +1974,28 @@ export async function applyMoveInternal(env, callerUid, gameId, rawRow, rawCol, 
   }
 
   const playerNumber = current.player1uid === callerUid ? 1 : 2;
-  if (current.currentPlayer !== playerNumber) throw new HttpError('Not your turn.', 412);
+  if (current.currentPlayer !== playerNumber) {
+    // Before rejecting, check if the OTHER player has stalled past their
+    // deadline. If they have, apply the timeout server-side and retry — this
+    // makes the human's move act as an implicit claim-timeout, removing the
+    // dependency on the client's claim-timeout poll running on time. Safari
+    // (iPhone in particular) throttles setInterval when the tab loses focus,
+    // which previously meant rejection cascades until the cron sweep cleaned
+    // up. Now any human move arriving after the bot's deadline self-recovers.
+    if (current.timerEnabled) {
+      const deadline = Number(current.turnDeadlineMs);
+      if (Number.isFinite(deadline) && deadline > 0 && Date.now() >= deadline) {
+        try {
+          await applyTurnTimeout(env, game, gameId);
+        } catch (_) {
+          throw new HttpError('Game state changed. Please retry.', 409);
+        }
+        // Tail-call into applyMoveInternal with the post-timeout state.
+        return applyMoveInternal(env, callerUid, gameId, rawRow, rawCol, requestKind);
+      }
+    }
+    throw new HttpError('Not your turn.', 412);
+  }
 
   // Soft-validate the client's intent against the server's authoritative phase.
   // Without this, a client whose place was rejected can have a queued eliminate

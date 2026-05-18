@@ -239,6 +239,14 @@ export function useOnlineGame(gameId) {
   // Opponent-stalling defense: when it's NOT my turn and the active player has run past
   // their server-tracked deadline, claim the timeout so a non-cooperative client can't
   // freeze the game. Server validates the deadline; this is just the trigger.
+  //
+  // Safari (iOS especially) throttles setInterval aggressively when the tab is
+  // unfocused/backgrounded, sometimes capping it to ~1 fire per minute. To
+  // recover quickly when the tab comes back to focus, we ALSO fire tryClaim
+  // on `visibilitychange` (tab regains focus) and `focus` (window refocused).
+  // Belt-and-suspenders: Fix A in the worker auto-applies the timeout if a
+  // human move arrives while the opponent is past deadline, so even if this
+  // client-side trigger fires late, the human's next move self-recovers.
   useEffect(() => {
     if (!gameId || !user || !myPlayerNumber || !data) return;
     if (data.status !== 'active') return;
@@ -252,11 +260,28 @@ export function useOnlineGame(gameId) {
       if (Date.now() <= deadline) return;
       claimGameTimeout({ gameId }).catch(() => {});
     };
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        tryClaim();
+      }
+    };
     tryClaim();
     const interval = setInterval(tryClaim, CLAIM_TIMEOUT_POLL_MS);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', tryClaim);
+    }
     return () => {
       cancelled = true;
       clearInterval(interval);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', tryClaim);
+      }
     };
   }, [gameId, user, myPlayerNumber, data]);
 

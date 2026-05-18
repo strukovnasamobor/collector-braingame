@@ -1,6 +1,11 @@
-/* Sakupljač theme — maps legacy CSS vars onto Ionic tokens. */
+/* Collecto theme — maps legacy CSS vars onto Ionic tokens. */
 
 :root {
+  /* Declare both schemes so Samsung Internet / Android WebView do NOT
+   * apply automatic-darkening (which would invert our already-themed
+   * dark-mode palette into a broken pseudo-dark look). Pair with the
+   * <meta name="color-scheme"> tag in index.html. */
+  color-scheme: light dark;
   --dot-size: 30px;
   --sk-bg: #ffffff;
   --sk-text: #000000;
