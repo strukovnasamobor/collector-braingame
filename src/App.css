@@ -537,10 +537,25 @@ body.dark .sk-turn-timer {
 .sk-leaderboard-container {
   width: 100%;
   background: var(--sk-dialog-bg);
-  padding: 16px;
+  padding: 0 16px 16px 16px;
   border-radius: 8px;
-  margin-top: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* The leaderboard page disables IonContent's own scroll and lays itself out
+ * as a full-height flex column: segment stays parked at the top, the
+ * container expands to fill the remaining space and scrolls internally.
+ * The scrollbar therefore lives on the right edge of the table area, not
+ * on the outer page chrome. */
+.sk-leaderboard-content .sk-tab-section {
+  height: 100%;
+}
+
+.sk-leaderboard-content .sk-leaderboard-container {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  overflow-y: auto;
 }
 
 /* Standard / Ranked tab switcher: theme-aware tray that follows the
@@ -574,7 +589,20 @@ body.dark .sk-turn-timer {
   letter-spacing: 0.6px;
   color: var(--sk-user-bar-color);
   font-weight: 600;
-  border-bottom: 2px solid var(--sk-cell-border);
+  /* Pin the header row to the top of the scrolling leaderboard container
+   * so the column labels stay visible while the body scrolls. Top is 0
+   * because .sk-leaderboard-container is the sticky positioning ancestor
+   * and its scroll starts at its content edge. Opaque background prevents
+   * tbody rows from bleeding through during scroll. The 2 px bottom border
+   * is drawn as an inset box-shadow rather than `border-bottom` — with
+   * `border-collapse: collapse` a real bottom border lives on the cell
+   * grid below the sticky cell and scrolls away with the body, while an
+   * inset shadow is painted inside the sticky cell and stays put. */
+  position: sticky;
+  top: 0;
+  z-index: 19;
+  background: var(--sk-dialog-bg);
+  box-shadow: inset 0 -2px 0 var(--sk-cell-border);
 }
 
 .sk-leaderboard-table th:first-child {

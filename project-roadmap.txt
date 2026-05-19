@@ -1,3 +1,5 @@
+CURRENT VERSION
+Ver. 1.0.0 (1)
 
 OFFLINE AND ONLINE AI TIERS
 1. Connector                { kind: 'oneply',   evalName: 'simple' }

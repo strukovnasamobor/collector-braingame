@@ -173,7 +173,7 @@ export default function LeaderboardPage() {
   return (
     <IonPage>
       <AppHeader title={t('leaderboard.title')} />
-      <IonContent fullscreen>
+      <IonContent fullscreen scrollY={false} className="sk-leaderboard-content">
         <div className="sk-tab-section ion-padding">
           <IonSegment
             value={mode}
