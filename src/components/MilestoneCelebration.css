@@ -1,0 +1,68 @@
+/* Fixed full-viewport overlay; card sits in the absolute center.
+ * pointer-events: none so the board, status, tab bar, etc. stay interactive. */
+.sk-milestone-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.sk-milestone-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3em;
+  text-align: center;
+  padding: 12px 24px;
+  border: 1.5px solid var(--sk-cell-border);
+  border-radius: 14px;
+  background: var(--sk-dialog-bg);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+  animation: sk-milestone-pop 2200ms ease-out forwards;
+}
+
+.sk-milestone-word {
+  font-size: 5vh;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.sk-milestone-count {
+  font-size: 2vh;
+  font-weight: 700;
+  opacity: 0.9;
+  line-height: 1;
+}
+
+@keyframes sk-milestone-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  11% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  22% {
+    transform: scale(1);
+  }
+  92% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-milestone-stack {
+    animation: none;
+    opacity: 1;
+  }
+}

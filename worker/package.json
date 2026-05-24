@@ -1,0 +1,19 @@
+{
+  "name": "collector-game-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "jose": "^6.2.3",
+    "onnxruntime-web": "1.16.3"
+  },
+  "devDependencies": {
+    "onnxruntime-node": "^1.26.0",
+    "wrangler": "^3.90.0"
+  }
+}

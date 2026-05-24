@@ -1,0 +1,21 @@
+{
+  "appId": "hr.strukovnasamobor.collector_braingame",
+  "appName": "Collector BG",
+  "webDir": "dist",
+  "server": {
+    "url": "https://collector-braingame.web.app",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "path": "android-capacitor"
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com"]
+    }
+  }
+}

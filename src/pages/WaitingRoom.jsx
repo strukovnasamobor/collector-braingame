@@ -1,0 +1,70 @@
+import { useEffect } from 'react';
+import { useHistory, useParams } from 'react-router-dom';
+import {
+  IonPage,
+  IonContent,
+  IonButton,
+  IonIcon,
+  IonSpinner
+} from '@ionic/react';
+import { closeCircleOutline } from 'ionicons/icons';
+import AppHeader from '../components/AppHeader';
+import { useI18n } from '../contexts/I18nContext';
+import { useFirestoreGame } from '../hooks/useFirestoreGame';
+import { cancelStandardRoom } from '../services/firebaseActions';
+
+export default function WaitingRoom() {
+  const { t } = useI18n();
+  const { code } = useParams();
+  const history = useHistory();
+  const gameId = 'game_' + code;
+  const { data, exists } = useFirestoreGame(gameId);
+
+  useEffect(() => {
+    if (!data) return;
+    if (data.status === 'active') history.replace(`/online/game/${gameId}`);
+    if (data.status === 'cancelled') history.replace('/online/lobby');
+  }, [data, history, gameId]);
+
+  useEffect(() => {
+    if (exists === false) history.replace('/online/lobby');
+  }, [exists, history]);
+
+  const cancel = async () => {
+    try {
+      await cancelStandardRoom({ code });
+    } catch (_) {}
+    history.replace('/online/lobby');
+  };
+
+  return (
+    <IonPage>
+      <AppHeader />
+      <IonContent fullscreen>
+        <div className="sk-menu-content">
+          <div className="sk-lobby-panel">
+            <p style={{ textAlign: 'center', margin: '0 0 4px' }}>
+              {t('lobby.room_code')}:
+            </p>
+            <p className="sk-room-code">{code}</p>
+            <div style={{ textAlign: 'center', margin: '12px 0 8px' }}>
+              <IonSpinner />
+            </div>
+            <p style={{ textAlign: 'center', margin: '0 0 4px' }}>
+              {t('lobby.waiting_room')}
+            </p>
+            <p style={{ textAlign: 'center', fontSize: '0.85em', opacity: 0.6, margin: '4px 0 12px' }}>
+              {t('lobby.private_room_no_coins')}
+            </p>
+            <div className="sk-row-buttons">
+              <IonButton fill="outline" color="medium" onClick={cancel}>
+                <IonIcon slot="start" icon={closeCircleOutline} />
+                {t('lobby.cancel_button')}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      </IonContent>
+    </IonPage>
+  );
+}

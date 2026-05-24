@@ -1,0 +1,873 @@
+/* App-level styles — menus, logos, game board, dialogs. */
+
+.sk-logo {
+  font-size: 3rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  background: linear-gradient(45deg, #dc3545, #007bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  letter-spacing: 3px;
+  text-align: center;
+  margin: 20px 0 28px 0;
+}
+
+.sk-menu-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 20px;
+  text-align: center;
+}
+
+.sk-menu-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 280px;
+}
+
+.sk-menu-btn {
+  --background: var(--sk-cell-bg);
+  --color: var(--sk-text);
+  --border-color: var(--sk-cell-border);
+  --border-radius: 10px;
+  --border-width: 1.5px;
+  --border-style: solid;
+  width: 100%;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: none;
+  height: 48px;
+}
+
+.sk-menu-btn::part(native) {
+  transition: background 0.18s, transform 0.13s;
+}
+
+.sk-menu-btn:hover {
+  --background: linear-gradient(90deg, #dc3545, #007bff);
+  --color: #fff;
+  --border-color: transparent;
+}
+
+.sk-user-bar {
+  position: relative;
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  padding: 12px 20px;
+  color: var(--sk-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 8px;
+  background: var(--sk-dialog-bg);
+  border: 1px solid var(--sk-cell-border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 80vw;
+  word-break: break-word;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sk-user-bar:hover {
+  border-color: #007bff;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
+}
+
+.sk-user-bar:active {
+  transform: scale(0.98);
+}
+
+.sk-lobby-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--sk-cell-border);
+  border-radius: 10px;
+  background: var(--sk-dialog-bg);
+  width: 100%;
+  max-width: 340px;
+  box-sizing: border-box;
+}
+
+.sk-lobby-panel label {
+  display: block;
+  font-size: 0.88rem;
+  margin-bottom: 5px;
+}
+
+.sk-input {
+  --background: var(--sk-bg);
+  --color: var(--sk-text);
+  border: 1px solid var(--sk-cell-border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  padding: 4px 10px;
+}
+
+.sk-row-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.sk-room-code {
+  letter-spacing: 6px;
+  font-size: 2.2rem;
+  margin: 0 0 16px 0;
+  text-align: center;
+}
+
+/* Coin balance widget */
+.sk-coin-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--sk-text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sk-coin-balance .sk-coin-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.sk-coin-balance--md {
+  font-size: 16px;
+}
+
+.sk-coin-balance--lg {
+  font-size: 16px;
+}
+
+.sk-coin-balance--sm {
+  font-size: 16px;
+}
+
+.sk-reward-grid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 3px;
+  margin: 10px auto 0;
+  font-size: 0.82em;
+  opacity: 0.65;
+  width: fit-content;
+}
+
+.sk-reward-label {
+  text-align: right;
+}
+
+.sk-reward-value {
+  text-align: right;
+}
+
+.sk-header-wallet-btn::part(native) {
+  padding: 8px;
+}
+
+.sk-wallet-alert .alert-message {
+  white-space: pre-line;
+}
+
+.sk-coin-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--sk-dialog-bg);
+  border: 1px solid var(--sk-cell-border);
+}
+
+/* The whole unlock list shares one CSS grid so columns line up across rows:
+ * label | coin icon | price | UNLOCK button. Each row and each CoinBalance
+ * inside it `display: contents` so their children flow into this parent grid
+ * — that's what keeps icons-below-icons and prices-below-prices aligned even
+ * when prices have different digit counts. */
+.sk-grid-unlocks {
+  display: grid;
+  grid-template-columns: auto auto auto auto;
+  align-items: center;
+  justify-content: center;
+  column-gap: 14px;
+  row-gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--sk-cell-border);
+}
+
+.sk-grid-unlocks-title {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.sk-grid-unlock-row,
+.sk-grid-unlock-row .sk-coin-balance {
+  display: contents;
+}
+
+.sk-grid-unlock-row .sk-grid-unlock-label {
+  font-weight: 600;
+}
+
+/* Centre each amount within its (auto-sized) column so 1.000 and 10.000 sit
+ * on the same vertical axis below the coin icon column. */
+.sk-grid-unlock-row .sk-coin-count {
+  justify-self: center;
+  font-size: 0.95rem;
+}
+
+/* Game board */
+.sk-game-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0 14px 0;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.sk-player-info {
+  text-align: center;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1.5px solid transparent;
+  min-width: 130px;
+}
+
+.sk-player-info.active {
+  border-color: var(--sk-cell-border);
+  background: var(--sk-dialog-bg);
+}
+
+.sk-player-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.sk-player-score {
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sk-status {
+  text-align: center;
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 6px 12px;
+  min-width: 120px;
+  width: fit-content;
+  max-width: min(100%, 320px);
+  margin-left: auto;
+  margin-right: auto;
+  border: 1px solid var(--sk-cell-border);
+  border-radius: 10px;
+  background: var(--sk-dialog-bg);
+}
+
+.sk-status--game-over {
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  max-width: min(100%, 360px);
+}
+
+.sk-game-over-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.sk-game-over-message {
+  font-weight: 400;
+}
+
+/* Rating-change line in the game-over panel: visually de-emphasised so the
+ * "{winner} wins!" headline still dominates. */
+.sk-game-over-rating {
+  display: inline-block;
+  font-size: 0.78em;
+  font-weight: 400;
+  opacity: 0.85;
+  letter-spacing: 0.01em;
+}
+
+.sk-game-over-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+
+.sk-game-over-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sk-turn-timer {
+  text-align: center;
+  font-size: 28px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #000000;
+}
+
+body.dark .sk-turn-timer {
+  color: #ffffff;
+}
+
+/* Last 10 seconds: pulsate and recolor in the active player's tint
+ * (red for P1, blue for P2). The inline `color` from the page wins. */
+.sk-turn-timer.warning {
+  animation: sk-timer-warning-pulse 700ms ease-in-out infinite;
+  font-weight: 900;
+}
+
+@keyframes sk-timer-warning-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.28); }
+}
+
+/* Big "TIME'S UP!" overlay shown when the timer hits 0. Colored by whoever
+ * just ran out of time. Auto-dismissed by the React component after ~1.5s. */
+.sk-times-up-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+  z-index: 9998;
+}
+
+.sk-times-up-text {
+  font-size: 9vh;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  animation: sk-times-up-pop 1500ms ease-out forwards;
+}
+
+@keyframes sk-times-up-pop {
+  0%   { opacity: 0; transform: scale(0.45); }
+  18%  { opacity: 1; transform: scale(1.18); }
+  35%  { transform: scale(0.94); }
+  55%  { transform: scale(1.06); }
+  85%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* Game-over winner name: tinted in the winner's player color and pulsing
+ * to draw attention. The surrounding "Game Over" / "wins!" text stays in
+ * the page's default theme color. */
+.sk-winner-name {
+  display: inline-block;
+  font-weight: 900;
+  animation: sk-winner-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes sk-winner-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
+}
+
+/* Quick reminder pulse on the turn-status text when the player taps the
+ * board while it isn't their turn. One-shot, restarts via React `key`. */
+.sk-status--pulse {
+  animation: sk-status-pulse 700ms ease-in-out;
+}
+
+@keyframes sk-status-pulse {
+  0%, 100% { transform: scale(1); }
+  35%      { transform: scale(1.18); }
+  70%      { transform: scale(0.98); }
+}
+
+.sk-grid-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120px;
+  margin-inline: auto;
+}
+
+.sk-grid {
+  display: grid;
+  background: var(--sk-grid-bg);
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.sk-cell {
+  outline: 1px solid var(--sk-cell-border);
+  background-color: var(--sk-cell-bg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  aspect-ratio: 1;
+}
+
+.sk-cell.eliminated {
+  background-color: var(--sk-eliminated-bg);
+}
+
+.sk-dot {
+  width: var(--dot-size);
+  height: var(--dot-size);
+  border-radius: 50%;
+}
+
+.sk-dot--pulse {
+  animation: sk-dot-pulse 360ms ease-out forwards;
+  transform-origin: 50% 50%;
+}
+
+@keyframes sk-dot-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.7); box-shadow: 0 0 14px currentColor; }
+  100% { transform: scale(1); box-shadow: 0 0 0 currentColor; }
+}
+
+/* "Wrong target" feedback during the eliminate sub-phase: the just-placed dot
+ * pulses to draw the eye, and the valid neighbour cells glow so the player
+ * sees where they can click. Both auto-clear after 700ms. */
+.sk-dot--invalid-attention {
+  animation: sk-dot-invalid-attention 700ms ease-out;
+  transform-origin: 50% 50%;
+}
+
+@keyframes sk-dot-invalid-attention {
+  0%   { transform: scale(1); }
+  20%  { transform: scale(1.55); box-shadow: 0 0 16px currentColor; }
+  40%  { transform: scale(0.92); }
+  60%  { transform: scale(1.35); box-shadow: 0 0 12px currentColor; }
+  80%  { transform: scale(1); }
+  100% { transform: scale(1); box-shadow: 0 0 0 currentColor; }
+}
+
+.sk-cell--neighbour-glow {
+  animation: sk-cell-neighbour-glow 700ms ease-out;
+}
+
+@keyframes sk-cell-neighbour-glow {
+  0%   { box-shadow: inset 0 0 0 0 rgba(255, 215, 0, 0); }
+  40%  { box-shadow: inset 0 0 0 4px rgba(255, 215, 0, 0.9); }
+  100% { box-shadow: inset 0 0 0 0 rgba(255, 215, 0, 0); }
+}
+
+.sk-connections-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.sk-connection--pulse {
+  animation: sk-connection-pulse 360ms ease-out forwards;
+}
+
+@keyframes sk-connection-pulse {
+  0%   { opacity: 0; stroke-width: 6px; }
+  35%  { opacity: 0.95; stroke-width: 5px; }
+  100% { opacity: 0.6; stroke-width: 3px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-dot--pulse,
+  .sk-connection--pulse {
+    animation: none;
+  }
+}
+
+/* Leaderboard */
+.sk-leaderboard-heading {
+  text-align: center;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--sk-dialog-bg);
+  border: 1px solid var(--sk-cell-border);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: var(--sk-text);
+}
+
+.sk-leaderboard-container {
+  width: 100%;
+  background: var(--sk-dialog-bg);
+  padding: 0 16px 16px 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* The leaderboard page disables IonContent's own scroll and lays itself out
+ * as a full-height flex column: segment stays parked at the top, the
+ * container expands to fill the remaining space and scrolls internally.
+ * The scrollbar therefore lives on the right edge of the table area, not
+ * on the outer page chrome. */
+.sk-leaderboard-content .sk-tab-section {
+  height: 100%;
+}
+
+.sk-leaderboard-content .sk-leaderboard-container {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  overflow-y: auto;
+}
+
+/* Standard / Ranked tab switcher: theme-aware tray that follows the
+ * dialog/user-bar palette so it inverts cleanly in dark mode. */
+.sk-leaderboard-segment {
+  --background: var(--sk-dialog-bg);
+  background: var(--sk-dialog-bg);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.sk-leaderboard-segment ion-segment-button {
+  --background: var(--sk-dialog-bg);
+  --background-checked: var(--sk-dialog-bg);
+  --color: var(--sk-user-bar-color);
+  --color-checked: #007bff;
+  --indicator-color: rgba(0, 123, 255, 0.18);
+}
+
+.sk-leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93rem;
+}
+
+.sk-leaderboard-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--sk-user-bar-color);
+  font-weight: 600;
+  /* Pin the header row to the top of the scrolling leaderboard container
+   * so the column labels stay visible while the body scrolls. Top is 0
+   * because .sk-leaderboard-container is the sticky positioning ancestor
+   * and its scroll starts at its content edge. Opaque background prevents
+   * tbody rows from bleeding through during scroll. The 2 px bottom border
+   * is drawn as an inset box-shadow rather than `border-bottom` — with
+   * `border-collapse: collapse` a real bottom border lives on the cell
+   * grid below the sticky cell and scrolls away with the body, while an
+   * inset shadow is painted inside the sticky cell and stays put. */
+  position: sticky;
+  top: 0;
+  z-index: 19;
+  background: var(--sk-dialog-bg);
+  box-shadow: inset 0 -2px 0 var(--sk-cell-border);
+}
+
+.sk-leaderboard-table th:first-child {
+  text-align: center;
+}
+
+.sk-leaderboard-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--sk-cell-border);
+}
+
+.sk-leaderboard-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.sk-rank-cell {
+  font-weight: 700;
+  width: 32px;
+  color: var(--sk-user-bar-color);
+  text-align: center;
+}
+
+.sk-top-1 .sk-rank-cell {
+  color: #f5a623;
+}
+
+.sk-top-2 .sk-rank-cell {
+  color: #9b9b9b;
+}
+
+.sk-top-3 .sk-rank-cell {
+  color: #c47d3e;
+}
+
+/* Medal emoji slightly larger than the rank number text so it reads as
+ * a medal rather than a generic glyph. line-height keeps the row tall. */
+.sk-rank-medal {
+  font-size: 1.4em;
+  line-height: 1;
+}
+
+.sk-name-cell {
+  font-weight: 600;
+}
+
+.sk-rating-cell {
+  font-weight: 700;
+  color: #007bff;
+}
+
+.sk-wdl-cell {
+  color: var(--sk-user-bar-color);
+  font-size: 0.88rem;
+}
+
+/* W/D/L split into three centered columns. Header inherits th sizing,
+ * body cell uses smaller, dimmer style so the rating column still pops. */
+.sk-leaderboard-table .sk-stat-cell {
+  text-align: center;
+  width: 36px;
+}
+
+.sk-leaderboard-table tbody .sk-stat-cell {
+  color: var(--sk-user-bar-color);
+  font-size: 0.88rem;
+}
+
+.sk-leaderboard-selected {
+  background: rgba(0, 123, 255, 0.15);
+}
+
+/* Background canvas — sits behind everything */
+.sk-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Let Ionic tab content show through the canvas */
+ion-content {
+  --background: transparent;
+}
+
+ion-app,
+ion-page,
+ion-content::part(background) {
+  background: transparent;
+}
+
+ion-content.sk-game-content::part(scroll) {
+  overflow: hidden;
+}
+
+.sk-alert-pre .alert-message,
+.sk-alert-pre .alert-text {
+  white-space: pre-wrap;
+}
+
+.sk-rules-content::part(scroll) {
+  overflow-y: auto;
+}
+
+.sk-rules-shell {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.sk-rules-intro {
+  margin: 0 0 16px 0;
+  font-size: 1rem;
+  line-height: 1.55;
+  color: var(--sk-text);
+}
+
+.sk-rules-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.sk-rule-card {
+  border: 1px solid var(--sk-cell-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--sk-dialog-bg), rgba(255, 255, 255, 0.02));
+  padding: 14px 14px 13px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+}
+
+.sk-rule-card-title {
+  font-weight: 800;
+  margin-bottom: 6px;
+  color: var(--sk-text);
+}
+
+.sk-rule-card-text {
+  font-size: 0.96rem;
+  line-height: 1.5;
+  color: var(--sk-text);
+}
+
+@media (min-width: 800px) {
+  .sk-rules-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Delete-account confirmation alert — destructive button in red. */
+.sk-alert-delete .sk-alert-delete-btn {
+  color: #dc3545 !important;
+  font-weight: 700;
+}
+
+/* Header tweaks */
+.sk-header-title {
+  background: linear-gradient(45deg, #dc3545, #007bff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 900;
+  letter-spacing: 2px;
+}
+
+.sk-tab-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 500px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sk-game-stage {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-height: 100%;
+  padding: 1px 2px 2px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  width: 100%;
+  backdrop-filter: none;
+  box-sizing: border-box;
+}
+
+.sk-tab-section.sk-game-stage {
+  max-width: 760px;
+}
+
+.sk-game-stage .sk-game-header,
+.sk-game-stage .sk-turn-timer {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.sk-game-stage .sk-game-header {
+  padding: 0;
+  margin-top: 12px;
+  margin-bottom: 2px;
+}
+
+.sk-game-stage .sk-grid-wrapper {
+  margin: 0 auto;
+}
+
+/* Pin the bottom block to the bottom of the IonContent. The status is always
+ * the last child; when a timer is present it sits just above the status. */
+.sk-game-stage .sk-turn-timer,
+.sk-game-stage .sk-status {
+  margin-top: auto;
+}
+
+.sk-game-stage .sk-turn-timer + .sk-status {
+  margin-top: 0;
+}
+
+.sk-game-stage .sk-turn-timer {
+  margin-bottom: 4px;
+  padding: 0;
+  text-align: center;
+}
+
+.sk-game-stage .sk-status {
+  margin-bottom: calc(env(safe-area-inset-bottom) + 6px);
+}
+
+/* Capacitor native: kill all top/bottom safe-area insets so the WebView
+ * paints edge-to-edge. The activity is already in immersive mode (status
+ * + nav bars hidden via WindowInsetsControllerCompat in MainActivity),
+ * but Android still reports notch/cutout insets that Ionic components
+ * and our own env() usages would otherwise honour. Web/browser PWA users
+ * are unaffected — they don't get the `capacitor-native` class. */
+html.capacitor-native {
+  --ion-safe-area-top: 0px;
+  --ion-safe-area-bottom: 0px;
+}
+
+html.capacitor-native .sk-game-stage .sk-status {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 640px) {
+  .sk-tab-section {
+    max-width: 100%;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  .sk-game-stage {
+    width: 100%;
+    padding: 0;
+  }
+}
+
+@media (min-width: 1200px) {
+  .sk-tab-section.sk-game-stage {
+    max-width: 900px;
+  }
+
+  .sk-grid-wrapper {
+    padding: 10px;
+  }
+}

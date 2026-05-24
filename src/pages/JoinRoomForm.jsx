@@ -1,0 +1,89 @@
+import { useState } from 'react';
+import { useHistory } from 'react-router-dom';
+import {
+  IonPage,
+  IonContent,
+  IonButton,
+  IonIcon,
+  IonItem,
+  IonLabel,
+  IonInput
+} from '@ionic/react';
+import { enterOutline, arrowBackOutline } from 'ionicons/icons';
+import AppHeader from '../components/AppHeader';
+import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
+import { joinStandardRoom } from '../services/firebaseActions';
+import { sanitizeRoomCode, ROOM_CODE_LEN } from '../utils/sanitize';
+
+export default function JoinRoomForm() {
+  const { t } = useI18n();
+  const { user } = useAuth();
+  const history = useHistory();
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [joining, setJoining] = useState(false);
+
+  const handleJoin = async () => {
+    const clean = sanitizeRoomCode(code);
+    if (clean.length !== ROOM_CODE_LEN) {
+      setError(t('notifications.enter_code'));
+      return;
+    }
+    if (!user) {
+      history.replace('/online/auth');
+      return;
+    }
+    setError('');
+    setJoining(true);
+    try {
+      const result = await joinStandardRoom({ code: clean });
+      const gameId = result?.data?.gameId || 'game_' + clean;
+      history.replace(`/online/game/${gameId}`);
+    } catch (e) {
+      setError(e?.message || t('notifications.room_not_found'));
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  return (
+    <IonPage>
+      <AppHeader />
+      <IonContent fullscreen>
+        <div className="sk-menu-content">
+          <div className="sk-lobby-panel">
+            <div style={{ fontWeight: 700, marginBottom: 10, textAlign: 'center' }}>
+              {t('lobby.join_room')}
+            </div>
+            <IonItem>
+              <IonLabel position="stacked">{t('lobby.room_code')}</IonLabel>
+              <IonInput
+                value={code}
+                placeholder={t('lobby.room_code_input_placeholder')}
+                maxlength={ROOM_CODE_LEN}
+                onIonInput={(e) => setCode(sanitizeRoomCode(e.detail.value || ''))}
+              />
+            </IonItem>
+            {error && (
+              <p style={{ color: '#dc3545', margin: '12px 0 0' }}>{error}</p>
+            )}
+            <p style={{ textAlign: 'center', fontSize: '0.85em', opacity: 0.6, margin: '12px 0 4px' }}>
+              {t('lobby.private_room_no_coins')}
+            </p>
+            <div className="sk-row-buttons">
+              <IonButton disabled={joining} onClick={handleJoin}>
+                <IonIcon slot="start" icon={enterOutline} />
+                {t('lobby.join_button')}
+              </IonButton>
+              <IonButton fill="outline" onClick={() => history.replace('/online/lobby')}>
+                <IonIcon slot="start" icon={arrowBackOutline} />
+                {t('lobby.cancel_button')}
+              </IonButton>
+            </div>
+          </div>
+        </div>
+      </IonContent>
+    </IonPage>
+  );
+}

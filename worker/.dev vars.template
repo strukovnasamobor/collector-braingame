@@ -1,0 +1,14 @@
+# Local development secrets for the Cloudflare Worker.
+# Wrangler reads this file automatically when you run `wrangler dev`.
+# DO NOT COMMIT THIS FILE. It is already gitignored via /.gitignore.
+#
+# Replace the placeholder values below with the matching fields from the
+# Firebase service-account JSON you download from:
+#   Firebase Console -> Project settings -> Service accounts -> Generate new private key
+# IMPORTANT: the service account MUST belong to project "collector-braingame".
+
+FIREBASE_CLIENT_EMAIL=
+
+# Keep the literal \n escapes (backslash + n) and the surrounding double quotes.
+# The worker's JWT signer expects exactly this format.
+FIREBASE_PRIVATE_KEY=

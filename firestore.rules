@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPlayerInGame(data) {
+      return isSignedIn() && (
+        data.player1uid == request.auth.uid || data.player2uid == request.auth.uid
+      );
+    }
+
+    match /players/{userId} {
+      // Allow public reads for the leaderboard (no auth required).
+      allow read: if true;
+      // Player docs are now written by Firebase Functions only.
+      allow create, update, delete: if false;
+    }
+
+    match /games/{gameId} {
+      allow read: if isPlayerInGame(resource.data)
+        || (
+          isSignedIn()
+          && resource.data.mode == 'standard'
+          && resource.data.source == 'room'
+          && resource.data.status == 'waiting'
+        );
+
+      // All game mutations are handled by Firebase Functions.
+      allow create, update, delete: if false;
+    }
+
+    match /matchmakingQueue_ranked/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+
+    match /matchmakingQueue_standard/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+  }
+}

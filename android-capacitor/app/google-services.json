@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "472116048566",
+    "project_id": "collector-braingame",
+    "storage_bucket": "collector-braingame.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472116048566:android:13841258beb897797a6c17",
+        "android_client_info": {
+          "package_name": "hr.strukovnasamobor.collector_braingame"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "472116048566-1a9mbacvtb9at4h91h4kq8lkame1cl0q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "hr.strukovnasamobor.collector_braingame",
+            "certificate_hash": "507f98b025095b142ef6353656bae23bc0d9602f"
+          }
+        },
+        {
+          "client_id": "472116048566-8v4oo2r1ea0nk4bv9srcp8fpei1le2gh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "hr.strukovnasamobor.collector_braingame",
+            "certificate_hash": "2c34486f15dbb09305d97d01711089d85230221c"
+          }
+        },
+        {
+          "client_id": "472116048566-6ist0b8adsdmm4fv0p45ub9osqpatf6l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCR0eI82K_rEH5fzT_c8rVdTAzb3JDhhZE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "472116048566-6ist0b8adsdmm4fv0p45ub9osqpatf6l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
