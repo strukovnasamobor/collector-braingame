@@ -834,15 +834,30 @@ ion-content.sk-game-content::part(scroll) {
   margin-bottom: calc(env(safe-area-inset-bottom) + 6px);
 }
 
-/* Capacitor native: kill all top/bottom safe-area insets so the WebView
- * paints edge-to-edge. The activity is already in immersive mode (status
- * + nav bars hidden via WindowInsetsControllerCompat in MainActivity),
- * but Android still reports notch/cutout insets that Ionic components
- * and our own env() usages would otherwise honour. Web/browser PWA users
- * are unaffected — they don't get the `capacitor-native` class. */
+/* Capacitor native: bottom inset zeroed for true edge-to-edge at the foot
+ * of the screen (gesture pill / nav bar). Top inset kept at the real
+ * cutout value so headers / controls don't render behind the camera
+ * notch or punch-hole. Web/browser PWA users are unaffected — they
+ * don't get the `capacitor-native` class. */
 html.capacitor-native {
-  --ion-safe-area-top: 0px;
+  --ion-safe-area-top: env(safe-area-inset-top);
   --ion-safe-area-bottom: 0px;
+}
+
+/* Paint the top safe-area band black on native. Sits as a fixed overlay
+ * above every other element so it covers the toolbar's safe-area padding
+ * too — keeps the camera-notch surround a clean black in both light and
+ * dark themes. */
+html.capacitor-native body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: #000;
+  z-index: 99999;
+  pointer-events: none;
 }
 
 html.capacitor-native .sk-game-stage .sk-status {
