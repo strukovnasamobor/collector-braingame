@@ -1465,6 +1465,7 @@ async function handleMatchmakingAction(env, authUser, body) {
       timeouts: { p1: 0, p2: 0 },
       result: null,
       createdAt: new Date().toISOString(),
+      createdAtMs: Date.now(),
       turnDeadlineMs: matchTimerEnabled ? Date.now() + TURN_DURATION_MS : null
     });
 
