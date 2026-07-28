@@ -1,17 +1,8 @@
 {
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
   "hosting": {
     "public": "dist",
-    "predeploy": [
-      "npm run build"
-    ],
-    "ignore": [
-      "firebase.json",
-      "**/node_modules/**"
-    ],
+    "predeploy": ["npm run build"],
+    "ignore": ["firebase.json", "**/node_modules/**", "**/.DS_Store", "**/.git/**"],
     "rewrites": [
       {
         "source": "**",
@@ -41,5 +32,11 @@
         ]
       }
     ]
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "eur3",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

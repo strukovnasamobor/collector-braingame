@@ -4,14 +4,25 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "start": "vite --port 3000 --host",
+    "dev": "vite --host",
     "build": "vite build",
+    "lint": "eslint .",
     "preview": "vite preview",
-    "firebase:login": "npx firebase-tools login",
-    "firebase:deploy": "npm run build && npx firebase-tools deploy --only hosting,firestore:rules,firestore:indexes",
-    "firebase:deploy:hosting": "npm run build && npx firebase-tools deploy --only hosting",
-    "firebase:deploy:firestore": "npx firebase-tools deploy --only firestore:rules,firestore:indexes",
-    "firebase:serve": "npm run build && npx firebase-tools emulators:start --only hosting"
+    "test": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore \"node --test test/firestore.rules.test.js\""
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
   },
   "dependencies": {
     "@capacitor-firebase/app-check": "^8.2.0",
