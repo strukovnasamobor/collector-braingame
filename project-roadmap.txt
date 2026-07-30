@@ -107,8 +107,8 @@ GAMIFICATION
       if user leaves -100 coins (can't go in beyond 0)
 - spending coins
     - grid size online games
-       - 1000 coins for 8x8 online grid
-       - 5000 coins for 10x10 online grid
+       - 8x8 online grid         1000 BGC
+       - 10x10 online grid      10000 BGC
 - protected coins and accesing grid sizes with backend
 
 TESTS OF EARNING/LOSING BGC
